@@ -38,7 +38,5 @@ fi
 export PATH=${ykrustc_prefix}/bin:${PATH}
 cd ..
 
-# Now we test yktrace with ykrustc.
-cd yktrace
+cargo fmt --all -- --check
 cargo test
-cargo fmt -- --check
