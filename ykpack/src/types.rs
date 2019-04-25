@@ -183,6 +183,23 @@ impl Rvalue {
     }
 }
 
+// Rvalue operands.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Operand {
+    Copy(Place),
+    Move(Place),
+    Constant, // FIXME implement.
+}
+
+impl Operand {
+    fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
+        match self {
+            Operand::Copy(p) | Operand::Move(p) => p.uses_vars_mut(),
+            Operand::Constant => vec![],
+        }
+    }
+}
+
 /// A call target.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum CallOperand {
@@ -199,6 +216,7 @@ pub enum Terminator {
         target_bb: BasicBlockIndex,
     },
     SwitchInt {
+        discr: Operand,
         target_bbs: Vec<BasicBlockIndex>,
     },
     Resume,
@@ -222,10 +240,12 @@ pub enum Terminator {
         ret_bb: Option<BasicBlockIndex>,
     },
     Assert {
+        cond: Operand,
         target_bb: BasicBlockIndex,
         cleanup_bb: Option<BasicBlockIndex>,
     },
     Yield {
+        value: Operand,
         resume_bb: BasicBlockIndex,
         drop_bb: Option<BasicBlockIndex>,
     },
@@ -248,11 +268,11 @@ impl Terminator {
             | Terminator::Goto { .. }
             | Terminator::Resume
             | Terminator::Abort => Vec::new(),
-            Terminator::SwitchInt { .. } => Vec::new(), // FIXME has a condition which will use.
+            Terminator::SwitchInt { discr, .. } => discr.uses_vars_mut(),
             Terminator::Return { local: ref mut v } => vec![v],
             Terminator::Call { .. } => Vec::new(), // FIXME, may use a local variable.
-            Terminator::Assert { .. } => Vec::new(), // FIXME has a condition var.
-            Terminator::Yield { .. } => Vec::new(), // FIXME check semantics of this terminator.
+            Terminator::Assert { cond, .. } => cond.uses_vars_mut(),
+            Terminator::Yield { value, .. } => value.uses_vars_mut(),
         }
     }
 }
