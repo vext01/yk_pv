@@ -188,25 +188,69 @@ impl Rvalue {
 pub enum Operand {
     Copy(Place),
     Move(Place),
-    Constant, // FIXME implement.
+    Constant(Constant),
 }
 
 impl Operand {
+    /// Assuming this is a call terminator operand, what is the target DefId?
+    pub fn call_operand_defid(&self) -> Option<&DefId> {
+        if let Operand::Constant(Constant {
+            ty: TyS {
+                sty: TyKind::FnDef(def_id), ..
+            }, ..
+        }) = self {
+            return Some(def_id);
+        }
+
+        None
+    }
+
     fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
             Operand::Copy(p) | Operand::Move(p) => p.uses_vars_mut(),
-            Operand::Constant => vec![],
+            Operand::Constant(..) => vec![],
         }
     }
 }
 
-/// A call target.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub enum CallOperand {
-    /// A statically known function identified by its DefId.
-    Fn(DefId),
-    /// An unknown or unhandled callable.
-    Unknown, // FIXME -- Find out what else. Closures jump to mind.
+pub struct TyS {
+    sty: TyKind,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+enum TyKind {
+    FnDef(DefId), // FIXME substs not implemented.
+    Unimplemented,
+}
+
+/// A compile-time constant.
+/// Here we deviate from the MIR slightly, as we will never see an unevaluated constant.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Constant {
+    // FIXME in MIR this is a shared reference. We should also share it.
+    ty: TyS,
+    // FIXME This too is a shared reference in MIR.
+    //literal: ConstValue,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+struct Ty {} // FIXME
+
+// #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+// pub enum ConstValue {
+//     Scalar(Scalar),
+//     Unimplemented, // FIXME
+// }
+
+// An immediate primitive constant value.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Scalar {
+    Bits {
+        size: u8,
+        bits: u128,
+    },
+    Unimplemented, // FIXME
 }
 
 /// A basic block terminator.
@@ -235,7 +279,7 @@ pub enum Terminator {
         unwind_bb: Option<BasicBlockIndex>,
     },
     Call {
-        operand: CallOperand,
+        func: Operand,
         cleanup_bb: Option<BasicBlockIndex>,
         ret_bb: Option<BasicBlockIndex>,
     },
@@ -270,7 +314,7 @@ impl Terminator {
             | Terminator::Abort => Vec::new(),
             Terminator::SwitchInt { discr, .. } => discr.uses_vars_mut(),
             Terminator::Return { local: ref mut v } => vec![v],
-            Terminator::Call { .. } => Vec::new(), // FIXME, may use a local variable.
+            Terminator::Call { func, .. } => func.uses_vars_mut(),
             Terminator::Assert { cond, .. } => cond.uses_vars_mut(),
             Terminator::Yield { value, .. } => value.uses_vars_mut(),
         }
