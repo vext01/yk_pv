@@ -97,13 +97,7 @@ pub enum Statement {
     Nop,
     Assign(Place, Rvalue),
     SetDiscriminant{place: Place, variant_index: VariantIndex},
-    Unimplemented(UnimplementedStatement),
-}
-
-/// Tells a human reading TIR which MIR conversion was unimplemented.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub enum UnimplementedStatement {
-    InlineAsm,
+    Unimplemented,
 }
 
 impl Display for Statement {
