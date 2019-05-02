@@ -104,8 +104,6 @@ pub enum Statement {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum UnimplementedStatement {
     InlineAsm,
-    Retag,
-    AscribeUserType,
 }
 
 impl Display for Statement {
