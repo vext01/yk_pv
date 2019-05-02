@@ -110,7 +110,7 @@ impl Display for Statement {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Place {
     Base(PlaceBase),
-    Projection(Projection<Box<Place>, LocalIndex>),
+    Projection(PlaceProjection),
 }
 
 /// The "base" of a place projection.
@@ -123,9 +123,9 @@ pub enum PlaceBase {
 
 /// A projection (deref, index, field access, ...).
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Projection<B, V> {
-    pub base: B,
-    pub elem: ProjectionElem<V>,
+pub struct PlaceProjection {
+    pub base: Box<Place>,
+    pub elem: ProjectionElem<LocalIndex>,
 }
 
 /// Describes a projection operation upon a projection base.
