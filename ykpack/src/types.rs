@@ -96,7 +96,7 @@ impl Display for BasicBlock {
 pub enum Statement {
     Nop,
     Assign(Place, Rvalue),
-    SetDiscriminant{place: Place, variant_index: VariantIndex},
+    SetDiscriminant(Place, VariantIndex),
     Unimplemented,
 }
 
