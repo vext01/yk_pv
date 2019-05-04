@@ -138,7 +138,35 @@ pub enum ProjectionElem<V> {
 pub enum Operand {
     /// In MIR this is either Move or Copy.
     Place(Place),
-    Unimplemented, // FIXME constants
+    Constant(Constant),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Constant {
+    Scalar(Scalar),
+    Unimplemented,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Scalar {
+    Bits{size: u8, hi_word: u64, lo_word: u64}, // rmp-serde doesn't support u128.
+    Unimplemented,
+}
+
+impl Scalar {
+    pub fn bits_from_u128(size: u8, val: u128) -> Self {
+        // Her we deliberately truncate val to separate the high and low chunks.
+        Scalar::Bits{size, hi_word: (val >> 64) as u64, lo_word: val as u64}
+    }
+
+    /// Returns the size and value (as a u128) from a `Scalar::Bits`. If `self` is another variant,
+    /// an error is returned.
+    pub fn bits(&self) -> Result<(u8, u128), ()> {
+        match self {
+            Scalar::Bits{size, hi_word, lo_word} => Ok((*size, (*hi_word as u128) << 64 | *lo_word as u128)),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Borrow descriptions.
@@ -274,5 +302,16 @@ impl Display for Pack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Pack::Mir(mir) = self;
         write!(f, "{}", mir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scalar;
+
+    #[test]
+    fn bits_round_trip() {
+        let val = std::u128::MAX - 427819;
+        assert_eq!(Scalar::bits_from_u128(8, val).bits().unwrap(), (8, val));
     }
 }
