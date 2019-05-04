@@ -10,10 +10,7 @@
 //! Types for the Yorick intermediate language.
 
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{self, Display},
-    marker::PhantomData,
-};
+use std::fmt::{self, Display};
 
 pub type CrateHash = u64;
 pub type DefIndex = u32;
@@ -21,6 +18,7 @@ pub type BasicBlockIndex = u32;
 pub type LocalIndex = u32;
 pub type VariantIndex = u32;
 pub type PromotedIndex = u32;
+pub type FieldIndex = u32;
 
 /// A mirror of the compiler's notion of a "definition ID".
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -133,14 +131,65 @@ pub struct PlaceProjection {
 /// Describes a projection operation upon a projection base.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum ProjectionElem<V> {
-    Unimplemented(PhantomData<V>), // FIXME
+    Deref,
+    Field(FieldIndex),
+    Index(V),
+    ConstantIndex {
+        offset: u32,
+        min_length: u32,
+        from_end: bool,
+    },
+    Subslice {
+        from: u32,
+        to: u32,
+    },
+    Downcast(VariantIndex),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Operand {
     /// In MIR this is either Move or Copy.
     Place(Place),
-    Unimplemented, // FIXME constants
+    Constant(Constant),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Constant {
+    Scalar(Scalar),
+    Unimplemented,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Scalar {
+    Bits {
+        size: u8,
+        hi_word: u64,
+        lo_word: u64,
+    }, // rmp-serde doesn't support u128.
+    Unimplemented,
+}
+
+impl Scalar {
+    pub fn bits_from_u128(size: u8, val: u128) -> Self {
+        Scalar::Bits {
+            size,
+            hi_word: (val >> 64) as u64,
+            lo_word: val as u64,
+        }
+    }
+
+    /// Returns the size and value (as a u128) from a `Scalar::Bits`. If `self` is another variant,
+    /// an error is returned.
+    pub fn bits(&self) -> Result<(u8, u128), ()> {
+        match self {
+            Scalar::Bits {
+                size,
+                hi_word,
+                lo_word,
+            } => Ok((*size, (*hi_word as u128) << 64 | *lo_word as u128)),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Borrow descriptions.
@@ -276,5 +325,16 @@ impl Display for Pack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Pack::Mir(mir) = self;
         write!(f, "{}", mir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scalar;
+
+    #[test]
+    fn bits_round_trip() {
+        let val = std::u128::MAX - 427819;
+        assert_eq!(Scalar::bits_from_u128(8, val).bits().unwrap(), (8, val));
     }
 }
