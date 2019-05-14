@@ -16,6 +16,8 @@ pub type CrateHash = u64;
 pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type LocalIndex = u32;
+pub type PtrOffset = usize;
+pub type NumBytes = usize;
 
 /// A mirror of the compiler's notion of a "definition ID".
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -93,14 +95,46 @@ impl Display for BasicBlock {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
+    /// Do nothing.
     Nop,
+    /// An assignment to a local variable.
+    Assign(LocalIndex, Rvalue),
+    /// Store to memory.
+    MemStore{ptr: Operand, offset: Operand, value: Operand, num_bytes: NumBytes},
+    /// Any unimplemented lowering maps to this variant.
     Unimplemented,
+}
+
+/// The right-hand side of an assignment.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Rvalue {
+    /// Another local variable.
+    Local(LocalIndex),
+    /// Load the specified number of bytes from a pointer and offset.
+    MemLoad{ptr: Operand, offset: Operand, num_bytes: Operand},
+    /// Integer addition.
+    AddU8(Operand, Operand),
+    AddU16(Operand, Operand),
+    AddU32(Operand, Operand),
+    AddU64(Operand, Operand),
+    AddU128(Operand, Operand),
+    AddUsize(Operand, Operand),
+    /// Allocate the specified number of bytes on the stack.
+    Alloca(NumBytes),
+    /// Get the address of a local variable.
+    AddressOf(LocalIndex),
 }
 
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self)
     }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Operand {
+    LocalIndex,
+    Constant,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
