@@ -17,8 +17,7 @@ pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type LocalIndex = u32;
 pub type TyIndex = u32;
-pub type PtrOffset = usize;
-pub type NumBytes = usize;
+pub type FieldIndex = u32;
 
 /// Primitive types.
 pub const TY_U8: TyIndex = 0;
@@ -38,7 +37,7 @@ pub const TY_ISIZE: TyIndex = 11;
 /// User types include structs and pointers.
 pub const FIRST_USER_TY: TyIndex = 12;
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Local {
     idx: LocalIndex,
     ty: TyIndex,
@@ -46,7 +45,7 @@ pub struct Local {
 
 impl Local {
     pub fn new(idx: LocalIndex, ty: TyIndex) -> Self {
-        Self {idx, ty}
+        Self { idx, ty }
     }
 
     pub fn idx(&self) -> LocalIndex {
@@ -59,6 +58,12 @@ impl Local {
 
     pub fn is_primitive_ty(self) -> bool {
         self.idx < FIRST_USER_TY
+    }
+}
+
+impl Display for Local {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "${}: t{}", self.idx, self.ty)
     }
 }
 
@@ -107,9 +112,12 @@ impl Display for Tir {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "[Begin TIR for {}]", self.item_path_str)?;
         writeln!(f, "    {}:", self.def_id)?;
+        let mut block_strs = Vec::new();
         for (i, b) in self.blocks.iter().enumerate() {
-            write!(f, "    bb{}:\n{}", i, b)?;
+            block_strs.push(format!("    bb{}:\n{}", i, b));
         }
+        println!("{:?}", block_strs);
+        writeln!(f, "{}", block_strs.join("\n"))?;
         writeln!(f, "[End TIR for {}]", self.item_path_str)?;
         Ok(())
     }
@@ -130,9 +138,9 @@ impl BasicBlock {
 impl Display for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for s in self.stmts.iter() {
-            write!(f, "        {}", s)?;
+            write!(f, "        {}\n", s)?;
         }
-        writeln!(f, "        term: {}\n", self.term)
+        write!(f, "        {}", self.term)
     }
 }
 
@@ -141,39 +149,66 @@ pub enum Statement {
     /// Do nothing.
     Nop,
     /// An assignment to a local variable.
-    Assign(LocalIndex, Rvalue),
-    /// Store `val`, which is of type `ty`, into the memory pointed to by `ptr`.
-    Store{ty: TyIndex, ptr: Operand, value: Operand},
+    Assign(Local, Rvalue),
+    /// Store into the memory.
+    Store(Local, Operand),
     /// Any unimplemented lowering maps to this variant.
     Unimplemented,
+}
+
+impl Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Statement::Nop => write!(f, "nop"),
+            Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
+            Statement::Store(ptr, val) => write!(f, "store({}, {})", ptr, val),
+            _ => write!(f, "unimplemented"),
+        }
+    }
 }
 
 /// The right-hand side of an assignment.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Rvalue {
     /// Another local variable.
-    Local(Local),
-    /// Get a pointer to the field at whose index is `fidx` and is of type `ty` from `ptr`.
-    GetField{ty: TyIndex, ptr: Operand, fidx: Constant},
+    Operand(Operand),
+    /// Get a pointer to a field.
+    GetField(Local, FieldIndex),
     /// Load a value of specified type from a pointer.
-    Load(TyIndex, Operand),
+    Load(Local),
     /// Binary Ops.
-    Add(TyIndex, Operand, Operand),
-    Sub(TyIndex, Operand, Operand),
+    Add(Operand, Operand),
+    Sub(Operand, Operand),
     /// Allocate space for the specified type on the stack and return a pointer to it.
     Alloca(TyIndex),
 }
 
-impl Display for Statement {
+impl Display for Rvalue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{:?}", self)
+        match self {
+            Rvalue::Operand(o) => write!(f, "{}", o),
+            Rvalue::GetField(ptr, fidx) => write!(f, "get_field({}, {})", ptr, fidx),
+            Rvalue::Load(l) => write!(f, "load({})", l),
+            Rvalue::Add(l, r) => write!(f, "int_add({}, {})", l, r),
+            Rvalue::Sub(l, r) => write!(f, "int_sub({}, {})", l, r),
+            Rvalue::Alloca(t) => write!(f, "alloca({})", t),
+        }
     }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Operand {
-    LocalIndex,
-    Constant,
+    Local(Local),
+    Constant(Constant),
+}
+
+impl Display for Operand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Operand::Local(l) => write!(f, "{}", l),
+            Operand::Constant(c) => write!(f, "{}", c),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -181,6 +216,16 @@ pub enum Constant {
     UnsignedInt(UnsignedInt),
     SignedInt(SignedInt),
     Unimplemented,
+}
+
+impl Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Constant::UnsignedInt(u) => write!(f, "{}", u),
+            Constant::SignedInt(s) => write!(f, "{}", s),
+            Constant::Unimplemented => write!(f, "Unimplemented Constant"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -191,7 +236,12 @@ pub enum UnsignedInt {
     U32(u32),
     U64(u64),
     U128 { hi: u64, lo: u64 },
-    Unimplemented,
+}
+
+impl Display for UnsignedInt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl UnsignedInt {
@@ -219,7 +269,12 @@ pub enum SignedInt {
     I32(i32),
     I64(i64),
     I128 { hi: u64, lo: u64 },
-    Unimplemented,
+}
+
+impl Display for SignedInt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl SignedInt {
