@@ -19,24 +19,6 @@ pub type LocalIndex = u32;
 pub type TyIndex = u32;
 pub type FieldIndex = u32;
 
-/// Primitive types.
-pub const TY_U8: TyIndex = 0;
-pub const TY_U16: TyIndex = 1;
-pub const TY_U32: TyIndex = 2;
-pub const TY_U64: TyIndex = 3;
-pub const TY_U128: TyIndex = 4;
-pub const TY_USIZE: TyIndex = 5;
-pub const TY_I8: TyIndex = 6;
-pub const TY_I16: TyIndex = 7;
-pub const TY_I32: TyIndex = 8;
-pub const TY_I64: TyIndex = 9;
-pub const TY_I128: TyIndex = 10;
-pub const TY_ISIZE: TyIndex = 11;
-
-/// The first "user type" follows the last primitive type.
-/// User types include structs and pointers.
-pub const FIRST_USER_TY: TyIndex = 12;
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Local {
     idx: LocalIndex,
@@ -54,10 +36,6 @@ impl Local {
 
     pub fn ty(&self) -> TyIndex {
         self.ty
-    }
-
-    pub fn is_primitive_ty(self) -> bool {
-        self.idx < FIRST_USER_TY
     }
 }
 
