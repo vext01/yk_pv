@@ -165,7 +165,8 @@ pub enum Statement {
     /// Store into the memory.
     Store(Local, Operand),
     /// Any unimplemented lowering maps to this variant.
-    Unimplemented,
+    /// The string inside is the stringified MIR statement.
+    Unimplemented(String),
 }
 
 impl Display for Statement {
@@ -174,7 +175,7 @@ impl Display for Statement {
             Statement::Nop => write!(f, "nop"),
             Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
             Statement::Store(ptr, val) => write!(f, "store({}, {})", ptr, val),
-            _ => write!(f, "unimplemented"),
+            Statement::Unimplemented(mir_stmt) => write!(f, "unimplemented_stmt: {}", mir_stmt),
         }
     }
 }
@@ -183,14 +184,15 @@ impl Display for Statement {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Rvalue {
     /// Another local variable.
-    Operand(Operand),
+    Local(Local),
+    /// A constant value.
+    Constant(Constant),
     /// Get a pointer to a field.
     GetField(Local, FieldIndex),
     /// Load a value of specified type from a pointer.
     Load(Local),
-    /// Binary Ops.
-    Add(Operand, Operand),
-    Sub(Operand, Operand),
+    /// Nullary, Unary and Binary Ops.
+    BinaryOp(BinOp, Operand, Operand),
     /// Allocate space for the specified type on the stack and return a pointer to it.
     Alloca(TyIndex),
 }
@@ -198,11 +200,11 @@ pub enum Rvalue {
 impl Display for Rvalue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Rvalue::Operand(o) => write!(f, "{}", o),
+            Rvalue::Local(l) => write!(f, "{}", l),
+            Rvalue::Constant(c) => write!(f, "{}", c),
             Rvalue::GetField(ptr, fidx) => write!(f, "get_field({}, {})", ptr, fidx),
             Rvalue::Load(l) => write!(f, "load({})", l),
-            Rvalue::Add(l, r) => write!(f, "int_add({}, {})", l, r),
-            Rvalue::Sub(l, r) => write!(f, "int_sub({}, {})", l, r),
+            Rvalue::BinaryOp(oper, o1, o2) => write!(f, "{}({}, {})", oper, o1, o2),
             Rvalue::Alloca(t) => write!(f, "alloca({})", t),
         }
     }
@@ -225,17 +227,81 @@ impl Display for Operand {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Constant {
-    UnsignedInt(UnsignedInt),
-    SignedInt(SignedInt),
+    Int(ConstantInt),
     Unimplemented,
 }
 
 impl Display for Constant {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Constant::UnsignedInt(u) => write!(f, "{}", u),
-            Constant::SignedInt(s) => write!(f, "{}", s),
+            Constant::Int(i) => write!(f, "{}", i),
             Constant::Unimplemented => write!(f, "Unimplemented Constant"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum ConstantInt {
+    UnsignedInt(UnsignedInt),
+    SignedInt(SignedInt),
+}
+
+impl ConstantInt {
+    // When constructing constant integers, truncation is deliberate.
+    pub fn u8_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::U8(bits as u8))
+    }
+
+    pub fn u16_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::U16(bits as u16))
+    }
+
+    pub fn u32_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::U32(bits as u32))
+    }
+
+    pub fn u64_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::U64(bits as u64))
+    }
+
+    pub fn u128_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::U128(SerU128::new(bits)))
+    }
+
+    pub fn usize_from_bits(bits: u128) -> Self {
+        ConstantInt::UnsignedInt(UnsignedInt::Usize(bits as usize))
+    }
+
+    pub fn i8_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::I8(bits as i8))
+    }
+
+    pub fn i16_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::I16(bits as i16))
+    }
+
+    pub fn i32_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::I32(bits as i32))
+    }
+
+    pub fn i64_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::I64(bits as i64))
+    }
+
+    pub fn i128_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::I128(SerI128::new(bits as i128)))
+    }
+
+    pub fn isize_from_bits(bits: u128) -> Self {
+        ConstantInt::SignedInt(SignedInt::Isize(bits as isize))
+    }
+}
+
+impl Display for ConstantInt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConstantInt::UnsignedInt(u) => write!(f, "{}", u),
+            ConstantInt::SignedInt(s) => write!(f, "{}", s),
         }
     }
 }
@@ -397,6 +463,53 @@ fn opt_bb_as_str(opt_bb: &Option<BasicBlockIndex>) -> String {
     match opt_bb {
         Some(bb) => format!("bb{}", bb),
         _ => String::from("none"),
+    }
+}
+
+/// Binary operations.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    BitXor,
+    BitAnd,
+    BitOr,
+    Shl,
+    Shr,
+    Eq,
+    Lt,
+    Le,
+    Ne,
+    Ge,
+    Gt,
+    Offset,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            BinOp::Add => "add",
+            BinOp::Sub => "sub",
+            BinOp::Mul => "mul",
+            BinOp::Div => "div",
+            BinOp::Rem => "rem",
+            BinOp::BitXor => "bit_xor",
+            BinOp::BitAnd => "bit_and",
+            BinOp::BitOr => "bit_or",
+            BinOp::Shl => "shl",
+            BinOp::Shr => "shr",
+            BinOp::Eq => "eq",
+            BinOp::Lt => "lt",
+            BinOp::Le => "le",
+            BinOp::Ne => "ne",
+            BinOp::Ge => "ge",
+            BinOp::Gt => "gt",
+            BinOp::Offset => "offset",
+        };
+        write!(f, "{}", s)
     }
 }
 
