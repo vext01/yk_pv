@@ -11,9 +11,6 @@
 //!
 //! No effort has been made to make this fast.
 
-#[macro_use]
-extern crate log;
-
 use elf;
 use fallible_iterator::FallibleIterator;
 use std::collections::HashMap;
@@ -73,7 +70,6 @@ impl Interp {
 
     /// Start interpreting TIR from the `main()` function.
     fn run(&self) {
-        // Set up the stack to start executing at the entry point.
         let mut stack = Vec::new();
         stack.push(Frame::new(&self.tir_map[&self.main_defid]));
 
@@ -86,36 +82,29 @@ impl Interp {
 
             if pc_stmt_usize < block_len {
                 let stmt = &cur_block.stmts[pc_stmt_usize];
-                debug!(
-                    "Interp Loc: body={}, pc={:?}:\n  {}",
-                    cur_frame.body.def_path_str, cur_frame.pc, stmt
-                );
                 self.interp_stmt(stmt);
             } else if pc_stmt_usize == block_len {
                 // We take statement index one past the end to mean the block terminator.
                 let term = &cur_block.term;
-                debug!(
-                    "Interp Term: body={}, pc={:?}:\n  {}",
-                    cur_frame.body.def_path_str, cur_frame.pc, term
-                );
                 self.interp_term(term);
             } else {
                 unreachable!();
             }
-
-            break; // FIXME -- Just to prevent infinite loop until statement actions are implemented.
         }
     }
 
     /// Interpret the specified statement.
-    fn interp_stmt(&self, _stmt: &Statement) {}
+    fn interp_stmt(&self, _stmt: &Statement) {
+        unimplemented!();
+    }
 
     /// Interpret the specified terminator.
-    fn interp_term(&self, _term: &Terminator) {}
+    fn interp_term(&self, _term: &Terminator) {
+        unimplemented!();
+    }
 }
 
 fn main() {
-    env_logger::init();
     let bin = std::env::args().skip(1).next().unwrap();
     Interp::new(&PathBuf::from(bin)).run();
 }
