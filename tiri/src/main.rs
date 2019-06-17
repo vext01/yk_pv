@@ -75,7 +75,7 @@ impl Interp {
 
         // The main interpreter loop.
         loop {
-            let cur_frame = stack.last().unwrap();
+            let cur_frame = stack.last_mut().unwrap();
             let cur_block = &cur_frame.body.blocks[usize::try_from(cur_frame.pc.0).unwrap()];
             let block_len = cur_block.stmts.len();
             let pc_stmt_usize = usize::try_from(cur_frame.pc.1).unwrap();
@@ -86,7 +86,7 @@ impl Interp {
             } else if pc_stmt_usize == block_len {
                 // We take statement index one past the end to mean the block terminator.
                 let term = &cur_block.term;
-                self.interp_term(term);
+                self.interp_term(cur_frame, term);
             } else {
                 unreachable!();
             }
@@ -94,13 +94,22 @@ impl Interp {
     }
 
     /// Interpret the specified statement.
-    fn interp_stmt(&self, _stmt: &Statement) {
-        unimplemented!();
+    fn interp_stmt(&self, stmt: &Statement) {
+        unimplemented!("{}", stmt);
     }
 
     /// Interpret the specified terminator.
-    fn interp_term(&self, _term: &Terminator) {
-        unimplemented!();
+    fn interp_term(&self, frame: &mut Frame, term: &Terminator) {
+        match term {
+            Terminator::Call{ret_bb, ..} => {
+                // FIXME: Ignore calls for now, just jump to the return location.
+                match ret_bb {
+                    Some(bb) => frame.pc = (*bb, 0),
+                    None => unreachable!("Non-convergent call returned"),
+                };
+            },
+            _ => unimplemented!("{}", term),
+        }
     }
 }
 
