@@ -26,7 +26,7 @@ use tir::TirTrace;
 pub trait SirTrace {
     /// Returns the length of the trace, measured in SIR locations.
     fn len(&self) -> usize;
-    /// Returns the SIR location and index `idx`.
+    /// Returns the SIR location at index `idx`.
     fn loc(&self, idx: usize) -> &SirLoc;
 }
 
@@ -78,12 +78,12 @@ pub struct ThreadTracer {
 }
 
 impl ThreadTracer {
-    /// Stops tracing on the current thread, returning a TIR trace on success. Returns `None` if
-    /// the trace was invalidated.
+    /// Stops tracing on the current thread, returning a TIR trace on success. Returns an error
+    /// (and the trace built thus-far, if we got that far) if the trace was invalidated.
     pub fn stop_tracing(self) -> Option<TirTrace> {
         self.t_impl
             .stop_tracing()
-            .map(|mir_trace| TirTrace::new(&*mir_trace))
+            .map(|mir_trace| TirTrace::new(&*mir_trace).ok().unwrap())
     }
 }
 

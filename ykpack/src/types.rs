@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
+use core::yk_swt::SirLoc;
 
 pub type CrateHash = u64;
 pub type DefIndex = u32;
@@ -94,6 +95,11 @@ impl DefId {
             def_idx,
         }
     }
+
+    /// Creates a DefId from an SirLoc, discarding the block index.
+    pub fn from_sir_loc(loc: &SirLoc) -> Self {
+        Self::new(loc.crate_hash(), loc.def_idx())
+    }
 }
 
 impl Display for DefId {
@@ -176,7 +182,7 @@ impl Display for Statement {
             Statement::Nop => write!(f, "nop"),
             Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
             Statement::Store(ptr, val) => write!(f, "store({}, {})", ptr, val),
-            Statement::Unimplemented(mir_stmt) => write!(f, "unimplemented_stmt: {}", mir_stmt),
+            Statement::Unimplemented(_mir_stmt) => write!(f, "unimplemented_stmt"), //: {}", mir_stmt),
         }
     }
 }
@@ -425,7 +431,7 @@ impl Display for Terminator {
             Terminator::Assert { cond, target_bb } => {
                 write!(f, "assert cond={}, target=bb{}", cond, target_bb,)
             }
-            Terminator::Unimplemented(s) => write!(f, "unimplemented: {}", s),
+            Terminator::Unimplemented(s) => write!(f, "unimplemented"), //: {}", s),
         }
     }
 }
