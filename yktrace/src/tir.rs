@@ -58,17 +58,23 @@ impl TirTrace {
 
         for blk_idx in 0..num_locs {
             let loc = trace.loc(blk_idx);
+            eprintln!("-----------------");
+            dbg!(loc);
             let body = match SIR_MAP.get(&DefId::from_sir_loc(loc)) {
                 Some(b) => b,
-                None => return Err(Self { ops })
+                None => {
+                    eprintln!("^^NO SIR!!!");
+                    ops.push(TirOp::Unknown);
+                    continue;
+                }
             };
-
             let shadow_bb_idx_usize = usize::try_from(loc.bb_idx()).unwrap();
             // Here we use an invariant of the MIR transform to find the user block for a shadow
             // block. In the blocks vector, first come N shadow blocks, then come N corresponding
             // user blocks. The debug assertion checks the invariant holds by looking at where the
             // shadow block returns to after the call to the trace recorder.
             let user_bb_idx_usize = body.blocks.len() / 2 + shadow_bb_idx_usize;
+            eprintln!("{}", body.blocks[user_bb_idx_usize]);
             #[cfg(debug_assertions)]
             match body.blocks[shadow_bb_idx_usize].term {
                 Terminator::Call { ret_bb, .. } => debug_assert!(
@@ -101,7 +107,11 @@ impl TirTrace {
 /// A TIR operation. A collection of these makes a TIR trace.
 #[derive(Debug)]
 pub enum TirOp {
-    Statement(Statement) // FIXME guards
+    Statement(Statement), // FIXME guards
+    // FIXME: I hope we can remove this in the future.
+    /// We were unable to find the SIR for a block.
+    Unknown,
+
 }
 
 #[cfg(test)]

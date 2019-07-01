@@ -5,3 +5,4 @@ authors = ["Edd Barrett <vext01@gmail.com>", "Laurence Tratt <laurie@tratt.net>"
 edition = "2018"
 
 [dependencies]
+yktrace = {path = "../yktrace"}

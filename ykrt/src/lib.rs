@@ -32,6 +32,7 @@
 
 #![feature(integer_atomics)]
 #![feature(test)]
+#![no_trace]
 
 pub mod mt;
 

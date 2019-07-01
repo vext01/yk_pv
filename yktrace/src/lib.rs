@@ -9,6 +9,7 @@
 
 #![feature(yk_swt)]
 #![feature(test)]
+#![no_trace]
 
 extern crate test;
 
@@ -79,8 +80,9 @@ pub struct ThreadTracer {
 
 impl ThreadTracer {
     /// Stops tracing on the current thread, returning a TIR trace on success. Returns `None` if
-    /// the trace was invalidated.
-    pub fn stop_tracing(self) -> Option<TirTrace> {
+    /// the trace was invalidated. FIXME
+    pub fn stop_tracing(&mut self) -> Option<TirTrace> {
+    dbg!("stop tracing");
         self.t_impl
             .stop_tracing()
             .map(|mir_trace| TirTrace::new(&*mir_trace).ok().unwrap())
@@ -100,6 +102,7 @@ trait ThreadTracerImpl {
 /// `start_tracing()` on a thread where there is already an active tracer leads to undefined
 /// behaviour.
 pub fn start_tracing(kind: Option<TracingKind>) -> ThreadTracer {
+    dbg!("start tracing");
     match kind {
         None | Some(TracingKind::SoftwareTracing) => swt::start_tracing(),
         _ => unimplemented!("tracing kind not implemented")

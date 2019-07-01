@@ -33,8 +33,10 @@
 #[cfg(test)]
 use std::time::Duration;
 use std::{
+    cell::RefCell,
     io,
     panic::{catch_unwind, resume_unwind, UnwindSafe},
+    ptr,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -42,6 +44,7 @@ use std::{
     },
     thread::{self, JoinHandle},
 };
+use yktrace::{start_tracing, ThreadTracer};
 
 pub type HotThreshold = u32;
 const DEFAULT_HOT_THRESHOLD: HotThreshold = 50;
@@ -226,11 +229,34 @@ impl MTThread {
                         new_pack = PHASE_COUNTING | (count + 1);
                     }
                     if pack.compare_and_swap(lp, new_pack, Ordering::Release) == lp {
+                        // If we are going to start tracing, then we also need to update the
+                        // `MTThreadInner` status field, but only once we know the atomic update of
+                        // the pack has succeeded.
+                        if new_pack == PHASE_TRACING {
+                            *self.inner.status.borrow_mut() = Some((start_tracing(None), loc));
+                        }
                         break;
                     }
                 }
                 PHASE_TRACING => {
-                    if pack.compare_and_swap(lp, PHASE_COMPILED, Ordering::Release) == lp {
+                    // Stop tracing if we've arrived back at the location we started tracing from.
+                    let mut status = self.inner.status.borrow_mut();
+                    let tracer = match status.as_mut() {
+                        Some((tracer, start_loc)) => {
+                            match ptr::eq(*start_loc as *const Location, loc as *const Location) {
+                                true => tracer,
+                                false => break, // Another thread is tracing this location.
+                            }
+                        },
+                        None => break, // This thread isn't tracing.
+                    };
+
+                    let new_pack = match tracer.stop_tracing() {
+                        Some(_t) => PHASE_COMPILED, // FIXME do something with trace.
+                        None => unimplemented!(), // Trace was invalidated.
+                    };
+
+                    if pack.compare_and_swap(lp, new_pack, Ordering::Release) == lp {
                         break;
                     }
                 }
@@ -245,12 +271,21 @@ impl MTThread {
 struct MTThreadInner {
     mt: MT,
     hot_threshold: HotThreshold,
+    /// If this thread is tracing, the yktrace-level tracer and the location from which it started
+    /// tracing. A raw pointer is used to allow our record of the starting location to out-live the
+    /// call to the JIT control point. Note that this pointer is only an identifier and is never
+    /// dereferenced.
+    status: RefCell<Option<(ThreadTracer, *const Location)>>,
 }
 
 impl MTThreadInner {
     fn init(mt: MT) -> MTThread {
         let hot_threshold = mt.hot_threshold();
-        let inner = MTThreadInner { mt, hot_threshold };
+        let inner = MTThreadInner {
+            mt,
+            hot_threshold,
+            status: RefCell::new(None),
+        };
         MTThread {
             inner: Rc::new(inner),
         }
