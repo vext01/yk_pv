@@ -15,9 +15,10 @@ use super::SirTrace;
 use elf;
 use fallible_iterator::FallibleIterator;
 use std::{collections::HashMap, convert::TryFrom, env, io::Cursor};
+pub use ykpack::Statement;
 #[cfg(debug_assertions)]
 use ykpack::{BasicBlockIndex, Local, SerU128, Terminator};
-use ykpack::{Body, Decoder, DefId, Pack, Statement};
+use ykpack::{Body, Decoder, DefId, Pack};
 
 // The SIR Map lets us look up a SIR body from the SIR DefId.
 // The map is unique to the executable binary being traced (i.e. shared for all threads).
@@ -124,6 +125,10 @@ impl TirTrace {
             }
         }
         Ok(Self { ops })
+    }
+
+    pub fn op(&self, idx: usize) -> &TirOp {
+        &self.ops.get(idx).expect("bogus trace index")
     }
 
     /// Return the length of the trace measure in operations.
