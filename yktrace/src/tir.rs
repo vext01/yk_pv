@@ -127,8 +127,11 @@ impl TirTrace {
         Ok(Self { ops })
     }
 
+    /// Return the TIR operation at index `idx` in the trace.
+    /// The index must not be out of bounds.
     pub fn op(&self, idx: usize) -> &TirOp {
-        &self.ops.get(idx).expect("bogus trace index")
+        debug_assert!(idx <= self.ops.len() - 1, "bogus trace index");
+        unsafe { &self.ops.get_unchecked(idx) }
     }
 
     /// Return the length of the trace measure in operations.
