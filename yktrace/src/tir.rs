@@ -15,11 +15,11 @@ use super::SirTrace;
 use crate::errors::InvalidTraceError;
 use elf;
 use fallible_iterator::FallibleIterator;
-use std::{collections::HashMap, convert::TryFrom, env, io::Cursor};
+use std::{collections::HashMap, convert::TryFrom, env, io::Cursor, fmt};
 #[cfg(debug_assertions)]
 use ykpack::BasicBlockIndex;
-pub use ykpack::Statement;
-use ykpack::{bodyflags, Body, Decoder, DefId, Local, Pack, SerU128, Terminator};
+pub use ykpack::{Statement, LocalIndex, Rvalue, Constant, Local};
+use ykpack::{bodyflags, Body, Decoder, DefId, Pack, SerU128, Terminator};
 
 lazy_static! {
     pub static ref SIR: Sir = {
@@ -197,11 +197,31 @@ pub enum Guard {
     Boolean(Local)
 }
 
+impl fmt::Display for Guard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Guard::Integer(local, u128v) => write!(f, "guard_eq({}, {})", local, u128v),
+            Guard::OtherInteger(local, u128vs) => write!(f, "guard_other({}, {:?})", local, u128vs),
+            Guard::Boolean(local) => write!(f, "{}", local),
+        }
+    }
+}
+
 /// A TIR operation. A collection of these makes a TIR trace.
 #[derive(Debug)]
 pub enum TirOp {
     Statement(Statement),
     Guard(Guard)
+}
+
+impl fmt::Display for TirOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TirOp::Statement(st) => write!(f, "{}", st),
+            TirOp::Guard(gd) => write!(f, "{}", gd),
+        };
+        Ok(())
+    }
 }
 
 #[cfg(test)]

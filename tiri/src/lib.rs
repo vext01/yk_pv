@@ -11,28 +11,29 @@
 //!
 //! No effort has been made to make this fast.
 
+#![feature(exclusive_range_pattern)]
 #![feature(test)]
 extern crate test;
 
-use yktrace::tir::{Guard, Statement, TirOp, TirTrace};
+use yktrace::tir::{Guard, Statement, TirOp, TirTrace, LocalIndex, Rvalue, Constant, Local};
+use std::convert::TryFrom;
+use std::collections::{hash_map, HashMap};
 
-/// Storage space for one local variable.
-/// FIXME: Not yet populated.
-struct Local {}
+const DUMP_CONTEXT: usize = 4;
 
 /// Mutable interpreter state.
 struct InterpState {
     /// The next position in the trace to interpret.
-    trace_pos: usize,
+    pc: usize,
     /// Local variable store.
-    _locals: Vec<Local>,
+    locals: HashMap<u32, Constant>,
 }
 
 impl InterpState {
     fn new() -> Self {
         Self {
-            trace_pos: 0,
-            _locals: Vec::new(),
+            pc: 0,
+            locals: HashMap::new(),
         }
     }
 }
@@ -51,25 +52,78 @@ impl<'t> Interp<'t> {
 
     /// Start interpreting the trace.
     pub fn run(&self) {
-        let state = InterpState::new();
+        let mut state = InterpState::new();
 
         // The main interpreter loop.
         loop {
-            let op = self.trace.op(state.trace_pos);
+            let op = self.trace.op(state.pc);
+            self.dump(&state);
             match op {
-                TirOp::Statement(st) => self.interp_stmt(st),
-                TirOp::Guard(g) => self.interp_guard(g),
+                TirOp::Statement(stmt) => self.interp_stmt(&mut state, stmt),
+                TirOp::Guard(grd) => self.interp_guard(&mut state, grd),
             }
         }
     }
 
+    /// Prints diagnostic information about the interpreter state.
+    /// Used for debugging.
+    fn dump(&self, state: &InterpState) {
+        // Dump the code.
+        let start = match state.pc {
+            0..DUMP_CONTEXT => 0,
+            _ => state.pc - DUMP_CONTEXT,
+        };
+        let end = state.pc + DUMP_CONTEXT;
+
+        eprintln!("[Begin Interpreter State Dump]");
+        eprintln!("     pc: {}\n", state.pc);
+        for idx in start..end {
+            let op = self.trace.op(idx);
+            let pc_str = if idx == state.pc {
+                "->"
+            } else {
+                "  "
+            };
+
+            eprintln!("  {} {}: {}", pc_str, idx, op);
+        }
+        eprintln!();
+
+        // Dump the locals.
+        for (idx, val) in &state.locals {
+            eprintln!("     ${}: {}", idx, val);
+        }
+        eprintln!("[End Interpreter State Dump]\n");
+    }
+
     /// Interpret the specified statement.
-    fn interp_stmt(&self, _stmt: &Statement) {
-        unimplemented!();
+    fn interp_stmt(&self, state: &mut InterpState, stmt: &Statement) {
+        match stmt {
+            Statement::Assign(var, rval) => {
+                state.locals.insert(var.idx(), self.eval_rvalue(state, rval));
+                state.pc += 1;
+            },
+            _ => panic!("unhandled statement: {}", stmt),
+        }
+    }
+
+    fn eval_rvalue(&self, state: &InterpState, rval: &Rvalue) -> Constant {
+        match rval {
+            Rvalue::Constant(c) => c.clone(),
+            Rvalue::Local(l) => self.local(state, l),
+            _ => panic!("unimplemented rvalue eval"),
+        }
+    }
+
+    fn local(&self, state: &InterpState, l: &Local) -> Constant {
+        match state.locals.get(&l.idx()) {
+            Some(c) => c.clone(),
+            None => panic!("uninitialised read from ${}", l.idx()),
+        }
     }
 
     /// Interpret the specified terminator.
-    fn interp_guard(&self, _guard: &Guard) {
+    fn interp_guard(&self, state: &mut InterpState, _guard: &Guard) {
         unimplemented!();
     }
 }
@@ -91,12 +145,16 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // FIXME -- This will fail until we investigate why SIR is missing.
     fn interp_simple_trace() {
         let tracer = start_tracing(Some(TracingKind::SoftwareTracing));
         let res = work(black_box(3), black_box(13));
         let sir_trace = tracer.stop_tracing().unwrap();
         assert_eq!(res, 15);
+
+
+        //use yktrace::debug::print_sir_trace;
+        //print_sir_trace(sir_trace.as_ref(), false);
+
         let tir_trace = TirTrace::new(sir_trace.as_ref()).unwrap();
         assert!(tir_trace.len() > 0);
 
