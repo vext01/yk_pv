@@ -151,27 +151,28 @@ pub mod bodyflags {
 /// Each Body maps to exactly one MIR Body.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Body {
-    pub def_id: DefId,
-    pub def_path_str: String,
-    pub blocks: Vec<BasicBlock>,
-    /// The number of arguments to the function.
-    pub num_args: usize,
-    /// The number of local variables used by the function, including the return value and
-    /// arguments.
-    pub num_locals: usize,
-    pub flags: u8,
+    //pub def_id: DefId,
+    //pub def_path_str: String,
+    pub symbol_name: String,
+    //pub blocks: Vec<BasicBlock>,
+    // The number of arguments to the function.
+    //pub num_args: usize,
+    // The number of local variables used by the function, including the return value and
+    // arguments.
+    //pub num_locals: usize,
+    //pub flags: u8,
 }
 
 impl Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[Begin SIR for {}]", self.def_path_str)?;
-        writeln!(f, "    {}:", self.def_id)?;
-        let mut block_strs = Vec::new();
-        for (i, b) in self.blocks.iter().enumerate() {
-            block_strs.push(format!("    bb{}:\n{}", i, b));
-        }
-        writeln!(f, "{}", block_strs.join("\n"))?;
-        writeln!(f, "[End SIR for {}]", self.def_path_str)?;
+        writeln!(f, "[Begin SIR for {}]", self.symbol_name)?;
+        //writeln!(f, "    {}:", self.def_id)?;
+        //let mut block_strs = Vec::new();
+        //for (i, b) in self.blocks.iter().enumerate() {
+        //    block_strs.push(format!("    bb{}:\n{}", i, b));
+        //}
+        //writeln!(f, "{}", block_strs.join("\n"))?;
+        writeln!(f, "[End SIR for {}]", self.symbol_name)?;
         Ok(())
     }
 }
