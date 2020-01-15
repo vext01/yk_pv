@@ -2,32 +2,42 @@
 
 use super::{SirTrace, ThreadTracer, ThreadTracerImpl};
 use crate::errors::InvalidTraceError;
-use core::yk::{swt, SirLoc};
+use std::convert::TryFrom;
+use core::yk::{swt, SirLoc as CoreSirLoc};
+use crate::SirLoc;
 use libc;
-use std::ops::Drop;
 
 /// A trace collected via software tracing.
 /// Since the trace is a heap-allocated C buffer, we represent it as a pointer and a length.
 #[derive(Debug)]
 struct SWTSirTrace {
-    buf: *mut SirLoc,
-    len: usize
+    locs: Vec<SirLoc>,
+}
+
+impl SWTSirTrace {
+    /// Create a SWTSirTrace from a raw buffer and (element) length.
+    ///
+    /// The buffer is converted to a higher level representation and the buffer passed in is freed.
+    fn from_buf(buf: *const CoreSirLoc, len: usize) -> Self {
+        // When we make a SWTSirTrace, we convert all of the locations from core::SirLoc up to
+        // crate::SirLoc and store them in self so that we can hand out references via raw_loc().
+        let locs = (0..len).map(|idx| {
+            let idx = isize::try_from(idx).unwrap();
+            SirLoc::from(unsafe { &*buf.offset(idx) })
+        }).collect();
+
+        unsafe { libc::free(buf as *mut libc::c_void) };
+        Self { locs }
+    }
 }
 
 impl SirTrace for SWTSirTrace {
     fn raw_len(&self) -> usize {
-        self.len
+        self.locs.len()
     }
 
     fn raw_loc(&self, idx: usize) -> &SirLoc {
-        assert!(idx < self.len, "out of bounds index");
-        unsafe { &*self.buf.add(idx) }
-    }
-}
-
-impl Drop for SWTSirTrace {
-    fn drop(&mut self) {
-        unsafe { libc::free(self.buf as *mut libc::c_void) };
+        &self.locs[idx]
     }
 }
 
@@ -39,7 +49,7 @@ impl ThreadTracerImpl for SWTThreadTracer {
     fn stop_tracing(&mut self) -> Result<Box<dyn SirTrace>, InvalidTraceError> {
         match swt::stop_tracing() {
             None => Err(InvalidTraceError::InternalError),
-            Some((buf, len)) => Ok(Box::new(SWTSirTrace { buf, len }) as Box<dyn SirTrace>)
+            Some((buf, len)) => Ok(Box::new(SWTSirTrace::from_buf(buf, len)) as Box<dyn SirTrace>),
         }
     }
 }

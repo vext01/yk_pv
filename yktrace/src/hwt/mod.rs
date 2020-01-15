@@ -2,7 +2,7 @@
 
 use super::{SirTrace, ThreadTracer, ThreadTracerImpl};
 use crate::errors::InvalidTraceError;
-use core::yk::SirLoc;
+use crate::SirLoc;
 use hwtracer::backends::TracerBuilder;
 
 pub mod mapper;
