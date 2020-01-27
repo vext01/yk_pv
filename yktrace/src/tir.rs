@@ -16,29 +16,35 @@ pub use ykpack::{
 lazy_static! {
     pub static ref SIR: Sir = {
         let ef = elf::File::open_path(env::current_exe().unwrap()).unwrap();
-        let sec = ef.get_section(".yk_sir").expect("Can't find SIR section");
-        let mut curs = Cursor::new(&sec.data);
-        let mut dec = Decoder::from(&mut curs);
 
+        // We iterate over ELF sections, looking for ones which contain SIR and loading it into
+        // memory.
         let mut bodies = HashMap::new();
         let mut trace_heads = Vec::new();
         let mut trace_tails = Vec::new();
-        while let Some(pack) = dec.next().unwrap() {
-            match pack {
-                Pack::Body(body) => {
-                    // Cache some locations that we need quick access to.
-                    if body.flags & bodyflags::TRACE_HEAD != 0 {
-                        trace_heads.push(body.symbol_name.clone());
-                    }
+        for sec in &ef.sections {
+            if sec.shdr.name.starts_with(".yksir_") {
+                let mut curs = Cursor::new(&sec.data);
+                let mut dec = Decoder::from(&mut curs);
 
-                    if body.flags & bodyflags::TRACE_TAIL != 0 {
-                        trace_tails.push(body.symbol_name.clone());
-                    }
+                while let Some(pack) = dec.next().unwrap() {
+                    match pack {
+                        Pack::Body(body) => {
+                            // Cache some locations that we need quick access to.
+                            if body.flags & bodyflags::TRACE_HEAD != 0 {
+                                trace_heads.push(body.symbol_name.clone());
+                            }
 
-                    let _old = bodies.insert(body.symbol_name.clone(), body);
-                    // FIXME but there are. why?
-                    //debug_assert!(_old.is_none()); // should be no duplicates.
-                },
+                            if body.flags & bodyflags::TRACE_TAIL != 0 {
+                                trace_tails.push(body.symbol_name.clone());
+                            }
+
+                            let _old = bodies.insert(body.symbol_name.clone(), body);
+                            // FIXME but there are. why?
+                            //debug_assert!(_old.is_none()); // should be no duplicates.
+                        },
+                    }
+                }
             }
         }
 

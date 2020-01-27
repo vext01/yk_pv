@@ -240,7 +240,7 @@ mod test_helpers {
         assert!(trace.into_iter().count() < trace.raw_len());
     }
 
-    #[ignore] // FIXME can't work until we encode SIR for dependency crates?
+    #[ignore] // FIXME
     #[test]
     fn trim_trace() {
         #[cfg(tracermode = "sw")]
@@ -249,6 +249,8 @@ mod test_helpers {
         let mut tracer = start_tracing(Some(TracingKind::HardwareTracing));
         work(black_box(100));
         let sir_trace = tracer.t_impl.stop_tracing().unwrap();
+        use crate::debug::print_sir_trace;
+        print_sir_trace(&*sir_trace, true, true);
 
         let contains_tracer_start_stop = |locs: Vec<&SirLoc>| {
             let mut found_start_code = false;
