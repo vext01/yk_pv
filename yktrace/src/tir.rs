@@ -39,9 +39,13 @@ lazy_static! {
                                 trace_tails.push(body.symbol_name.clone());
                             }
 
-                            let _old = bodies.insert(body.symbol_name.clone(), body);
-                            // FIXME but there are. why?
-                            //debug_assert!(_old.is_none()); // should be no duplicates.
+                            // Due to the way Rust compiles stuff, duplicates may exist. Where
+                            // duplicates exist, the functions will be identical.
+                            if let Some(old) = bodies.get(&body.symbol_name) {
+                                debug_assert!(old == &body);
+                            } else {
+                                bodies.insert(body.symbol_name.clone(), body);
+                            }
                         },
                     }
                 }
