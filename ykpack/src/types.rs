@@ -126,12 +126,14 @@ pub struct Body {
     pub symbol_name: String,
     pub blocks: Vec<BasicBlock>,
     pub flags: u8,
+    pub locals: Vec<()>,
 }
 
 impl Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "[Begin SIR for {}]", self.symbol_name)?;
         writeln!(f, "  flags: {}", self.flags)?;
+        writeln!(f, "  locals: {:?}", self.locals)?;
 
         let mut block_strs = Vec::new();
         for (i, b) in self.blocks.iter().enumerate() {
