@@ -58,16 +58,6 @@ impl From<&Place> for Local {
     }
 }
 
-impl From<&Operand> for Local {
-    fn from(opnd: &Operand) -> Local {
-        if let Operand::Place(p) = opnd {
-            Local::from(p)
-        } else {
-            panic!("operand is not a Local");
-        }
-    }
-}
-
 impl Display for Local {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "${}", self.0)
