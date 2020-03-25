@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::mem;
 
 use yktrace::tir::{
-    Constant, ConstantInt, Operand, Rvalue, Statement, TirOp, TirTrace, UnsignedInt,
+    Constant, ConstantInt, Operand, Rvalue, Statement, TirOp, TirTrace, UnsignedInt, BinOp, Local
 };
 
 use dynasmrt::DynasmApi;
@@ -106,6 +106,19 @@ impl TraceCompiler {
         );
     }
 
+    fn c_binop(&mut self, _op: BinOp, opnd1: &Operand, opnd2: &Operand) {
+        // FIXME addition of Locals only.
+        let l1 = Local::from(opnd1);
+        let l2 = Local::from(opnd2);
+
+        let r1 = self.local_to_reg(l1.0);
+        let r2 = self.local_to_reg(l2.0);
+
+        dynasm!(self.asm
+            ; add Rq(r1), Rq(r2)
+        );
+    }
+
     fn statement(&mut self, stmt: &Statement) {
         match stmt {
             Statement::Assign(l, r) => {
@@ -117,6 +130,7 @@ impl TraceCompiler {
                         Constant::Bool(b) => self.c_mov_bool(local, *b),
                         c => todo!("Not implemented: {}", c),
                     },
+                    Rvalue::BinaryOp(op, opnd1, opnd2) => self.c_binop(*op, opnd1, opnd2),
                     unimpl => todo!("Not implemented: {:?}", unimpl),
                 };
             }
