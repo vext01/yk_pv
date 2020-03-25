@@ -10,10 +10,56 @@ use std::collections::HashMap;
 use std::mem;
 
 use yktrace::tir::{
-    Constant, ConstantInt, Operand, Rvalue, Statement, TirOp, TirTrace, UnsignedInt, BinOp, Local
+    BinOp, Constant, ConstantInt, Local, Operand, Rvalue, SignedInt, Statement, TirOp, TirTrace,
+    UnsignedInt,
 };
 
 use dynasmrt::DynasmApi;
+
+enum DynasmConst {
+    I32(i32),
+    I64(i64),
+}
+
+impl From<&ConstantInt> for DynasmConst {
+    fn from(ci: &ConstantInt) -> Self {
+        match ci {
+            ConstantInt::UnsignedInt(ui) => {
+                // Unsigned to signed casts deliberate. We care only for the bit-representation.
+                match ui {
+                    UnsignedInt::U8(u) => Self::I32(*u as i32),
+                    UnsignedInt::U16(u) => Self::I32(*u as i32),
+                    UnsignedInt::U32(u) => Self::I32(*u as i32),
+                    UnsignedInt::U64(u) => Self::I64(*u as i64),
+                    UnsignedInt::Usize(u) => {
+                        #[cfg(target_pointer_width = "64")]
+                        {
+                            Self::I64(*u as i64)
+                        }
+                        #[cfg(target_pointer_width = "32")]
+                        Self::I64(*u as i32)
+                    }
+                    UnsignedInt::U128(_) => panic!("dynasm can't deal with 128-bit constants"),
+                }
+            }
+            ConstantInt::SignedInt(si) => match si {
+                SignedInt::I8(i) => Self::I32(*i as i32),
+                SignedInt::I16(i) => Self::I32(*i as i32),
+                SignedInt::I32(i) => Self::I32(*i as i32),
+                SignedInt::I64(i) => Self::I64(*i as i64),
+                SignedInt::Isize(i) => {
+                    #[cfg(target_pointer_width = "64")]
+                    {
+                        Self::I64(*i as i64)
+                    }
+                    #[cfg(target_pointer_width = "32")]
+                    Self::I64(*i as i32)
+                }
+                SignedInt::I128(_) => panic!("dynasm can't deal with 128-bit constants"),
+            },
+        }
+    }
+}
 
 /// A compiled SIRTrace.
 pub struct CompiledTrace {
@@ -107,18 +153,36 @@ impl TraceCompiler {
     }
 
     fn c_binop(&mut self, _op: BinOp, dest: Local, opnd1: &Operand, opnd2: &Operand) {
-        // FIXME addition of Locals only.
-        let l1 = Local::from(opnd1);
-        let l2 = Local::from(opnd2);
+        let r_dest = self.local_to_reg(dest.0);
 
-        let dest = self.local_to_reg(dest.0);
-        let r1 = self.local_to_reg(l1.0);
-        let r2 = self.local_to_reg(l2.0);
+        match (opnd1, opnd2) {
+            (Operand::Place(p1), Operand::Place(p2)) => {
+                let r1 = self.local_to_reg(Local::from(p1).0);
+                let r2 = self.local_to_reg(Local::from(p2).0);
 
-        dynasm!(self.asm
-            ; mov Rq(dest), Rq(r1)
-            ; add Rq(dest), Rq(r2)
-        );
+                dynasm!(self.asm
+                    ; mov Rq(r_dest), Rq(r1)
+                    ; add Rq(r_dest), Rq(r2));
+            }
+            (Operand::Place(p), Operand::Constant(Constant::Int(ci)))
+            | (Operand::Constant(Constant::Int(ci)), Operand::Place(p)) => {
+                let r = self.local_to_reg(Local::from(p).0);
+
+                match DynasmConst::from(ci) {
+                    DynasmConst::I32(i) => {
+                        dynasm!(self.asm
+                            ; mov Rq(r_dest), i;
+                              add Rq(r_dest), Rq(r));
+                    }
+                    DynasmConst::I64(i) => {
+                        dynasm!(self.asm
+                            ; mov Rq(r_dest), QWORD i;
+                              add Rq(r_dest), Rq(r));
+                    }
+                }
+            }
+            _ => todo!("unimplemented operand for binary operation"),
+        }
     }
 
     fn statement(&mut self, stmt: &Statement) {
