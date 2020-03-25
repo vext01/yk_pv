@@ -48,6 +48,26 @@ new_ser128!(SerI128, i128);
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Local(pub LocalIndex);
 
+impl From<&Place> for Local {
+    fn from(p: &Place) -> Local {
+        if !p.projection.is_empty() {
+            panic!("Not a plain local: has projections");
+        } else {
+            p.local
+        }
+    }
+}
+
+impl From<&Operand> for Local {
+    fn from(opnd: &Operand) -> Local {
+        if let Operand::Place(p) = opnd {
+            Local::from(p)
+        } else {
+            panic!("operand is not a Local");
+        }
+    }
+}
+
 impl Display for Local {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "${}", self.0)
@@ -476,7 +496,7 @@ impl Display for Terminator {
 }
 
 /// Binary operations.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum BinOp {
     Add,
     Sub,

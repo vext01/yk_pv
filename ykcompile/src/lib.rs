@@ -106,31 +106,33 @@ impl TraceCompiler {
         );
     }
 
-    fn c_binop(&mut self, _op: BinOp, opnd1: &Operand, opnd2: &Operand) {
+    fn c_binop(&mut self, _op: BinOp, dest: Local, opnd1: &Operand, opnd2: &Operand) {
         // FIXME addition of Locals only.
         let l1 = Local::from(opnd1);
         let l2 = Local::from(opnd2);
 
+        let dest = self.local_to_reg(dest.0);
         let r1 = self.local_to_reg(l1.0);
         let r2 = self.local_to_reg(l2.0);
 
         dynasm!(self.asm
-            ; add Rq(r1), Rq(r2)
+            ; mov Rq(dest), Rq(r1)
+            ; add Rq(dest), Rq(r2)
         );
     }
 
     fn statement(&mut self, stmt: &Statement) {
         match stmt {
             Statement::Assign(l, r) => {
-                let local = l.local.0;
+                let local = Local::from(l);
                 match r {
-                    Rvalue::Use(Operand::Place(p)) => self.mov_local_local(local, p.local.0),
+                    Rvalue::Use(Operand::Place(p)) => self.mov_local_local(local.0, p.local.0),
                     Rvalue::Use(Operand::Constant(c)) => match c {
-                        Constant::Int(ci) => self.c_mov_int(local, ci),
-                        Constant::Bool(b) => self.c_mov_bool(local, *b),
+                        Constant::Int(ci) => self.c_mov_int(local.0, ci),
+                        Constant::Bool(b) => self.c_mov_bool(local.0, *b),
                         c => todo!("Not implemented: {}", c),
                     },
-                    Rvalue::BinaryOp(op, opnd1, opnd2) => self.c_binop(*op, opnd1, opnd2),
+                    Rvalue::BinaryOp(op, opnd1, opnd2) => self.c_binop(*op, l.local, opnd1, opnd2),
                     unimpl => todo!("Not implemented: {:?}", unimpl),
                 };
             }
