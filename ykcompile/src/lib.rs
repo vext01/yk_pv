@@ -152,6 +152,7 @@ impl TraceCompiler {
         );
     }
 
+    // FIXME only adds.
     fn c_binop(&mut self, _op: BinOp, dest: Local, opnd1: &Operand, opnd2: &Operand) {
         let r_dest = self.local_to_reg(dest.0);
 
@@ -162,23 +163,19 @@ impl TraceCompiler {
 
                 dynasm!(self.asm
                     ; mov Rq(r_dest), Rq(r1)
-                    ; add Rq(r_dest), Rq(r2));
+                    ; add Rq(r_dest), Rq(r2))
             }
             (Operand::Place(p), Operand::Constant(Constant::Int(ci)))
             | (Operand::Constant(Constant::Int(ci)), Operand::Place(p)) => {
                 let r = self.local_to_reg(Local::from(p).0);
 
                 match DynasmConst::from(ci) {
-                    DynasmConst::I32(i) => {
-                        dynasm!(self.asm
-                            ; mov Rq(r_dest), i;
-                              add Rq(r_dest), Rq(r));
-                    }
-                    DynasmConst::I64(i) => {
-                        dynasm!(self.asm
-                            ; mov Rq(r_dest), QWORD i;
-                              add Rq(r_dest), Rq(r));
-                    }
+                    DynasmConst::I32(i) => dynasm!(self.asm
+                            ; mov Rd(r_dest), i
+                            ; add Rd(r_dest), Rd(r)),
+                    DynasmConst::I64(i) => dynasm!(self.asm
+                            ; mov Rq(r_dest), QWORD i
+                            ; add Rq(r_dest), Rq(r)),
                 }
             }
             _ => todo!("unimplemented operand for binary operation"),
@@ -196,7 +193,11 @@ impl TraceCompiler {
                         Constant::Bool(b) => self.c_mov_bool(local.0, *b),
                         c => todo!("Not implemented: {}", c),
                     },
-                    Rvalue::BinaryOp(op, opnd1, opnd2) => self.c_binop(*op, l.local, opnd1, opnd2),
+                    // FIXME checked binops are not yet checked.
+                    Rvalue::BinaryOp(op, opnd1, opnd2)
+                    | Rvalue::CheckedBinaryOp(op, opnd1, opnd2) => {
+                        self.c_binop(*op, l.local, opnd1, opnd2)
+                    }
                     unimpl => todo!("Not implemented: {:?}", unimpl),
                 };
             }
@@ -254,5 +255,20 @@ mod tests {
         let tir_trace = TirTrace::new(&*sir_trace).unwrap();
         let ct = TraceCompiler::compile(tir_trace);
         assert_eq!(ct.execute(), 13);
+    }
+
+    #[inline(never)]
+    fn add(x: u64, y: u64) -> u64 {
+        x + y
+    }
+
+    #[test]
+    pub(crate) fn test_binop() {
+        let th = start_tracing(Some(TracingKind::HardwareTracing));
+        add(10, 20);
+        let sir_trace = th.stop_tracing().unwrap();
+        let tir_trace = TirTrace::new(&*sir_trace).unwrap();
+        let ct = TraceCompiler::compile(tir_trace);
+        assert_eq!(ct.execute(), 30);
     }
 }
