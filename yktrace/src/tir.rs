@@ -119,7 +119,7 @@ impl TirTrace {
 
             // Initialise VarRenamer's accumulator (and thus also set the first offset) to the
             // traces most outer number of locals.
-            rnm.init_acc(body.num_locals);
+            rnm.init_acc(1);
 
             // When adding statements to the trace, we clone them (rather than referencing the
             // statements in the SIR) so that we have the freedom to mutate them later.
@@ -418,9 +418,15 @@ impl VarRenamer {
     }
 
     fn rename_local(&self, local: &Local) -> Local {
-        Local(local.0 + self.offset)
+        let l = Local(local.0 + self.offset)
+        if live_locals.has(local){
+        }
+        else {
+            emit("${} = $1.{}".format(l, self.uninit_locals))
+        }
     }
 }
+
 
 impl Display for TirTrace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
