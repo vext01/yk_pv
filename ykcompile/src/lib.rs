@@ -644,9 +644,7 @@ impl<TT> TraceCompiler<TT> {
         match l {
             Location::Register(reg) => {
                 if c_val <= u32::MAX.into() {
-                    dynasm!(self.asm
-                        ; add Rq(reg), c_val as u32 as i32
-                    );
+                    asm_reg_const32!(self.asm, 4, add, reg, c_val as i32);
                 } else {
                     dynasm!(self.asm
                         ; mov rax, QWORD c_val
