@@ -327,11 +327,7 @@ impl<TT> TraceCompiler<TT> {
         let c_val = constant.i64_cast();
         match loc {
             Location::Register(reg) => {
-                dynasm!(self.asm
-                    ; mov Rq(reg), QWORD c_val
-                );
-                let xxx: i64 = constant.to_bits_i64();
-                asm_reg_const!(self.asm, SIZE_ALL, mov, reg, xxx);
+                asm_reg_const!(self.asm, SIZE_ALL, mov, reg, c_val);
             }
             Location::Stack(offset) => {
                 if c_val <= u32::MAX.into() {
@@ -352,9 +348,7 @@ impl<TT> TraceCompiler<TT> {
                 }
             }
             Location::Arg(off) => {
-                dynasm!(self.asm
-                    ; mov rax, QWORD c_val
-                );
+                asm_reg_const!(self.asm, SIZE_ALL, mov, RAX.code(), c_val);
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rdi + off], RAX.code());
             }
             Location::Deref(boxed) => match *boxed {
@@ -369,9 +363,7 @@ impl<TT> TraceCompiler<TT> {
                     }
                 }
                 Location::Register(reg) => {
-                    dynasm!(self.asm
-                        ; mov rax, QWORD c_val
-                    );
+                    asm_reg_const!(self.asm, SIZE_ALL, mov, RAX.code(), c_val);
                     asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [Rq(reg)], RAX.code());
                 }
                 _ => todo!(),
@@ -385,9 +377,7 @@ impl<TT> TraceCompiler<TT> {
     fn mov_place_bool(&mut self, place: &Place, b: bool) -> Result<(), CompileError> {
         match self.place_to_location(place)? {
             Location::Register(reg) => {
-                dynasm!(self.asm
-                    ; mov Rq(reg), QWORD b as i64
-                );
+                asm_reg_const!(self.asm, SIZE_ALL, mov, reg, b as i64);
             }
             Location::Stack(offset) => {
                 let val = b as i32;
