@@ -622,20 +622,14 @@ impl<TT> TraceCompiler<TT> {
                 );
             }
             (Location::Register(reg), Location::Stack(off)) => {
-                dynasm!(self.asm
-                    ; add Rq(reg), [rbp - off]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, add, reg, [rbp - off]);
             }
             (Location::Stack(off), Location::Register(reg)) => {
-                dynasm!(self.asm
-                    ; add [rbp - off], Rq(reg)
-                );
+                asm_mem_reg!(self.asm, SIZE_ALL, add, [rbp - off], reg);
             }
             (Location::Stack(off1), Location::Stack(off2)) => {
                 asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off2]);
-                dynasm!(self.asm
-                    ; add [rbp - off1], rax
-                );
+                asm_mem_reg!(self.asm, SIZE_ALL, add, [rbp - off1], RAX.code());
             }
             (Location::Arg(_), _) => {
                 // It seems SIR doesn't directly assign binary operations to projections and
@@ -670,8 +664,8 @@ impl<TT> TraceCompiler<TT> {
                 } else {
                     dynasm!(self.asm
                         ; mov rax, QWORD c_val
-                        ; add [rbp - off], rax
                     );
+                    asm_mem_reg!(self.asm, SIZE_ALL, add, [rbp - off], RAX.code());
                 }
             }
             Location::Arg(_) => {
