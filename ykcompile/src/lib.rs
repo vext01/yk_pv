@@ -222,9 +222,7 @@ impl<TT> TraceCompiler<TT> {
                 );
             }
             (Location::Register(reg), Location::Stack(off)) => {
-                dynasm!(self.asm
-                    ; mov Rq(reg), [rbp - off]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, reg, [rbp - off]);
             }
             (Location::Stack(off), Location::Register(reg)) => {
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rbp - off], reg);
@@ -234,57 +232,41 @@ impl<TT> TraceCompiler<TT> {
                 // here to simplify moving values from the stack back onto the stack (which x86
                 // does not support). Otherwise, we would have to free up a register via spilling,
                 // making this operation more complicated and costly.
-                dynasm!(self.asm
-                    ; mov rax, [rbp - off2]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off2]);
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rbp - off1], RAX.code());
             }
             (Location::Register(reg), Location::Arg(off)) => {
-                dynasm!(self.asm
-                    ; mov Rq(reg), [rdi + off]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, reg, [rdi + off]);
             }
             (Location::Stack(soff), Location::Arg(aoff)) => {
-                dynasm!(self.asm
-                    ; mov rax, [rdi + aoff]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rdi + aoff]);
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rbp - soff], RAX.code());
             }
             (Location::Arg(off), Location::Register(reg)) => {
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rdi + off], reg);
             }
             (Location::Arg(aoff), Location::Stack(soff)) => {
-                dynasm!(self.asm
-                    ; mov rax, [rbp - soff]
-                );
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - soff]);
                 asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rdi + aoff], RAX.code());
             }
             (Location::Register(reg), Location::Deref(boxed)) => match *boxed {
                 Location::Stack(off) => {
-                    dynasm!(self.asm
-                        ; mov Rq(reg), [rbp - off]
-                        ; mov Rq(reg), [Rq(reg)]
-                    );
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, reg, [rbp - off]);
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, reg, [Rq(reg)]);
                 }
                 Location::Register(reg2) => {
-                    dynasm!(self.asm
-                        ; mov Rq(reg), [Rq(reg2)]
-                    );
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, reg, [Rq(reg2)]);
                 }
                 _ => todo!(),
             },
             (Location::Stack(off1), Location::Deref(boxed)) => match *boxed {
                 Location::Stack(off2) => {
-                    dynasm!(self.asm
-                        ; mov rax, [rbp - off2]
-                        ; mov rax, [rax]
-                    );
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off2]);
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rax]);
                     asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rbp - off1], RAX.code());
                 }
                 Location::Register(reg) => {
-                    dynasm!(self.asm
-                        ; mov rax, [Rq(reg)]
-                    );
+                    asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [Rq(reg)]);
                     asm_mem_reg!(&mut self.asm, SIZE_ALL, mov, [rbp - off1], RAX.code());
                 }
                 _ => todo!(),
@@ -376,8 +358,8 @@ impl<TT> TraceCompiler<TT> {
             Location::Deref(boxed) => match *boxed {
                 Location::Stack(off) => {
                     if c_val <= u32::MAX.into() {
+                        asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off]);
                         dynasm!(self.asm
-                            ; mov rax, [rbp - off]
                             ; mov QWORD [rax], c_val as u32 as i32
                         );
                     } else {
@@ -543,14 +525,10 @@ impl<TT> TraceCompiler<TT> {
                     match self.place_to_location(place)? {
                         Location::Register(reg) => {
                             let off = stack_index(reg) * 8;
-                            dynasm!(self.asm
-                                ; mov Rq(arg_reg), [rsp + off]
-                            );
+                            asm_reg_mem!(self.asm, SIZE_ALL, mov, arg_reg, [rsp + off]);
                         }
                         Location::Stack(off) => {
-                            dynasm!(self.asm
-                                ; mov Rq(arg_reg), [rbp - off]
-                            );
+                            asm_reg_mem!(self.asm, SIZE_ALL, mov, arg_reg, [rbp - off]);
                         }
                         Location::Arg(_) => todo!(),
                         Location::Deref(_) => todo!(),
@@ -654,8 +632,8 @@ impl<TT> TraceCompiler<TT> {
                 );
             }
             (Location::Stack(off1), Location::Stack(off2)) => {
+                asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off2]);
                 dynasm!(self.asm
-                    ; mov rax, [rbp - off2]
                     ; add [rbp - off1], rax
                 );
             }
