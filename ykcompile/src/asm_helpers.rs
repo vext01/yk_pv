@@ -87,6 +87,35 @@ macro_rules! asm_reg_reg {
     }
 }
 
+/// Emits a 'mem <- imm' assembler instruction using the desired size qualifier.
+macro_rules! asm_mem_imm {
+    ($dasm: expr, $size: expr, $op: expr, $mem: expr, $imm: expr) => {
+        match $size {
+            1 => {
+                dynasm!($dasm
+                    ; $op BYTE $mem, BYTE $imm as i8
+                );
+            },
+            2 => {
+                dynasm!($dasm
+                    ; $op WORD $mem, WORD $imm as i16
+                );
+            },
+            4 => {
+                dynasm!($dasm
+                    ; $op DWORD $mem, DWORD $imm as i32
+                );
+            },
+            8 => {
+                dynasm!($dasm
+                    ; $op QWORD $mem, QWORD $imm
+                );
+            },
+            _ => panic!("Invalid size operand: {}", $size),
+        }
+    }
+}
+
 
 // A note on no64 helpers.
 //

@@ -359,9 +359,10 @@ impl<TT> TraceCompiler<TT> {
                 Location::Stack(off) => {
                     if c_val <= u32::MAX.into() {
                         asm_reg_mem!(self.asm, SIZE_ALL, mov, RAX.code(), [rbp - off]);
-                        dynasm!(self.asm
-                            ; mov QWORD [rax], c_val as u32 as i32
-                        );
+                        //dynasm!(self.asm // KILL
+                        //    ; mov QWORD [rax], c_val as u32 as i32
+                        //);
+                        asm_mem_imm!(self.asm, SIZE_ALL, mov, [rax], c_val as u32 as i32);
                     } else {
                         todo!()
                     }
