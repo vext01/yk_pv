@@ -58,24 +58,23 @@ macro_rules! asm_reg_mem {
     }
 }
 
-/// Emits a 'reg <- const'  assembler instruction using the desired size qualifier. $const must be
-/// an i64 bit pattern, the interpretation of which is undefinied: only its bits matter.
+/// Emits a 'reg <- const'  assembler instruction using the desired size qualifier.
 macro_rules! asm_reg_const {
     ($dasm: expr, $size: expr, $op: expr, $reg: expr, $const: expr) => {
         match $size {
             1 => {
                 dynasm!($dasm
-                    ; $op Rb($reg), BYTE $const as i8
+                    ; $op Rb($reg), BYTE $const
                 );
             }
             2 => {
                 dynasm!($dasm
-                    ; $op Rw($reg), WORD $const as i16
+                    ; $op Rw($reg), WORD $const
                 );
             },
             4 => {
                 dynasm!($dasm
-                    ; $op Rd($reg), DWORD $const as i32
+                    ; $op Rd($reg), DWORD $const
                 );
             },
             8 => {
