@@ -644,7 +644,7 @@ impl<TT> TraceCompiler<TT> {
         match l {
             Location::Register(reg) => {
                 if c_val <= u32::MAX.into() {
-                    asm_reg_const32!(self.asm, 4, add, reg, c_val as i32);
+                    asm_reg_imm_no64!(self.asm, 4, add, reg, c_val as i32);
                 } else {
                     dynasm!(self.asm
                         ; mov rax, QWORD c_val
@@ -654,9 +654,7 @@ impl<TT> TraceCompiler<TT> {
             }
             Location::Stack(off) => {
                 if c_val <= u32::MAX.into() {
-                    dynasm!(self.asm
-                        ; add QWORD [rbp - off], c_val as u32 as i32
-                    );
+                    asm_mem_imm_no64!(self.asm, 4, add, [rbp - off], c_val as u32 as i32);
                 } else {
                     dynasm!(self.asm
                         ; mov rax, QWORD c_val

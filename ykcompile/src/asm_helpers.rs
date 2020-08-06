@@ -87,25 +87,54 @@ macro_rules! asm_reg_reg {
     }
 }
 
-/// Emits a 'reg <- const'  assembler instruction using the desired size qualifier.
-/// This currently has no arm for `$size = 8` as some operations, e.g. ADD don't allow imm64 source
-/// operands and that would cause a (compile-time) dynasm error if we had the `$size = 8` arm.
-macro_rules! asm_reg_const32 {
-    ($dasm: expr, $size: expr, $op: expr, $reg: expr, $const: expr) => {
+
+// A note on no64 helpers.
+//
+// These are helpers with no arm for dealing with 64-bit operands. Some kinds of operations, e.g.
+// `ADD r, imm` don't allow 64-bit operands. The existence of a `$size = 8` arm would cause a
+// compile-time error.
+
+/// Emits a 'reg <- imm{8,16,32}'  assembler instruction using the desired size qualifier.
+macro_rules! asm_reg_imm_no64 {
+    ($dasm: expr, $size: expr, $op: expr, $reg: expr, $imm: expr) => {
         match $size {
             1 => {
                 dynasm!($dasm
-                    ; $op Rb($reg), BYTE $const as i8
+                    ; $op Rb($reg), BYTE $imm as i8
                 );
             },
             2 => {
                 dynasm!($dasm
-                    ; $op Rw($reg), WORD $const as i16
+                    ; $op Rw($reg), WORD $imm as i16
                 );
             },
             4 => {
                 dynasm!($dasm
-                    ; $op Rd($reg), DWORD $const
+                    ; $op Rd($reg), DWORD $imm
+                );
+            },
+            _ => panic!("Invalid size operand: {}", $size),
+        }
+    }
+}
+
+/// Emits a 'mem <- imm{8,16,32}' assembler instruction using the desired size qualifier.
+macro_rules! asm_mem_imm_no64 {
+    ($dasm: expr, $size: expr, $op: expr, $mem: expr, $imm: expr) => {
+        match $size {
+            1 => {
+                dynasm!($dasm
+                    ; $op BYTE $mem, BYTE $imm as i8
+                );
+            },
+            2 => {
+                dynasm!($dasm
+                    ; $op WORD $mem, WORD $imm as i16
+                );
+            },
+            4 => {
+                dynasm!($dasm
+                    ; $op DWORD $mem, DWORD $imm
                 );
             },
             _ => panic!("Invalid size operand: {}", $size),
