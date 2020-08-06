@@ -57,3 +57,32 @@ macro_rules! asm_reg_mem {
         }
     }
 }
+
+/// Emits a 'reg <- reg'  assembler instruction using the desired size qualifier.
+macro_rules! asm_reg_reg {
+    ($dasm: expr, $size: expr, $op: expr, $dest_reg: expr, $src_reg: expr) => {
+        match $size {
+            1 => {
+                dynasm!($dasm
+                    ; $op Rb($dest_reg), Rb($src_reg)
+                );
+            }
+            2 => {
+                dynasm!($dasm
+                    ; $op Rw($dest_reg), Rw($src_reg)
+                );
+            },
+            4 => {
+                dynasm!($dasm
+                    ; $op Rd($dest_reg), Rd($src_reg)
+                );
+            },
+            8 => {
+                dynasm!($dasm
+                    ; $op Rq($dest_reg), Rq($src_reg)
+                );
+            }
+            _ => panic!("Invalid size operand: {}", $size),
+        }
+    }
+}

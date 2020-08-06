@@ -617,9 +617,7 @@ impl<TT> TraceCompiler<TT> {
     fn checked_add_place(&mut self, l1: Location, l2: Location) {
         match (l1, l2) {
             (Location::Register(lreg), Location::Register(rreg)) => {
-                dynasm!(self.asm
-                    ; add Rq(lreg), Rq(rreg)
-                );
+                asm_reg_reg!(self.asm, SIZE_ALL, add, lreg, rreg);
             }
             (Location::Register(reg), Location::Stack(off)) => {
                 asm_reg_mem!(self.asm, SIZE_ALL, add, reg, [rbp - off]);
@@ -652,8 +650,8 @@ impl<TT> TraceCompiler<TT> {
                 } else {
                     dynasm!(self.asm
                         ; mov rax, QWORD c_val
-                        ; add Rq(reg), rax
                     );
+                    asm_reg_reg!(self.asm, SIZE_ALL, add, reg, RAX.code());
                 }
             }
             Location::Stack(off) => {
