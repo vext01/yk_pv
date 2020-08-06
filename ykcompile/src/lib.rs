@@ -330,7 +330,8 @@ impl<TT> TraceCompiler<TT> {
                 dynasm!(self.asm
                     ; mov Rq(reg), QWORD c_val
                 );
-                asm_reg_const!(self.asm, SIZE_ALL, mov, reg, constant.to_bits_i64());
+                let xxx: i64 = constant.to_bits_i64();
+                asm_reg_const!(self.asm, SIZE_ALL, mov, reg, xxx);
             }
             Location::Stack(offset) => {
                 if c_val <= u32::MAX.into() {
