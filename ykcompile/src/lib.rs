@@ -659,10 +659,10 @@ impl<TT> TraceCompiler<TT> {
         // will store the return value. It's safe to assume the caller expects this to be
         // clobbered.
         //
-        // FIXME: Note that we don't save rax. Although this is a caller save register, the way the
-        // tests currently work is they check the last value returned at the end of the trace. This
-        // value is assumed to remain in rax. If we were to restore rax, we'd break that. Note that
-        // the register allocator never gives out rax for this precise reason.
+        // FIXME: Note that we don't save RAX. Although this is a caller save register, we are
+        // currently using RAX as a general purpose register in parts of the compiler (the register
+        // allocator thus never gives out RAX). In this case we use it to store the result from the
+        // call in its destination, so we must not override it when returning from the call.
         let save_regs = [RDI, RSI, RDX, RCX, R8, R9, R10, R11]
             .iter()
             .map(|r| r.code())
