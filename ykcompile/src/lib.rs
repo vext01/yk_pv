@@ -1910,4 +1910,30 @@ mod tests {
         ct.execute(&mut args);
         assert_eq!(args.0, 100);
     }
+
+    /// Test codegen of copying something which doesn't fit in a register.
+    #[ignore] // Places, once resolved, are currently assumed  to git in a register.
+    #[test]
+    fn place_larger_than_reg() {
+        // FIXME return value not necessary, but we can't codegen returning nothing just yet.
+        fn ten(io: &mut IO) -> u8 {
+            io.0 = S(10, 10, 10);
+            0
+        }
+
+        #[derive(Debug, Eq, PartialEq)]
+        struct S(u64, u64, u64);
+        struct IO(S);
+
+        let mut inputs = trace_inputs(IO(S(0, 0, 0)));
+        let th = start_tracing(TracingKind::HardwareTracing);
+        let _ = ten(&mut inputs);
+        let sir_trace = th.stop_tracing().unwrap();
+        let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        let ct = TraceCompiler::<IO>::compile(tir_trace);
+
+        let mut args = IO(S(1, 1, 1));
+        ct.execute(&mut args);
+        assert_eq!(args.0, S(10, 10, 10));
+    }
 }
