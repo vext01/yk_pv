@@ -458,14 +458,32 @@ impl Display for BasicBlock {
     }
 }
 
+/// Describes a place derived (via projection) from a local variable.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Derivative {
+    /// The byte offset of a field or index which could be statically computed.
+    ByteOffset(usize),
+    /// The field number of an enum, whose offset can only be known at runtime depending on the
+    /// concrete variant.
+    EnumField(usize),
+}
+
+impl Display for Derivative {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ByteOffset(offs) => write!(f, "+{}", offs),
+            Self::EnumField(idx) => write!(f, ".{}", idx),
+        }
+    }
+}
 
 /// An IR place. This is used in SIR and TIR to describe the address of a piece of data.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum IPlace {
     /// The IPlace describes a value as an Local+offset pair.
-    Val(Local, usize),
+    Val(Local, Derivative),
     /// The IPlace describes a reference to a value as an Local+offset pair.
-    Ref(Local, usize),
+    Ref(Local, Derivative),
     /// The IPlace describes a constant.
     Const(Constant),
     /// A construct which we have no lowering for yet.
@@ -482,7 +500,6 @@ impl Display for IPlace {
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
