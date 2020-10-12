@@ -463,16 +463,16 @@ impl Display for BasicBlock {
 pub enum Derivative {
     /// The byte offset of a field or index which could be statically computed.
     ByteOffset(usize),
-    /// The field number of an enum, whose offset can only be known at runtime depending on the
-    /// concrete variant.
-    EnumField(usize),
+    /// The field number whose offset can only be known at runtime. For example, with an enum the
+    /// byte offset would depend upon the runtime variant.
+    RuntimeField(u32),
 }
 
 impl Display for Derivative {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ByteOffset(offs) => write!(f, "+{}", offs),
-            Self::EnumField(idx) => write!(f, ".{}", idx),
+            Self::RuntimeField(idx) => write!(f, ".{}", idx),
         }
     }
 }
