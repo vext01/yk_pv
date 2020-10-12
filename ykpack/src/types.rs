@@ -1,4 +1,5 @@
 //! Types for the Yorick intermediate language.
+#![allow(unused_variables, dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -457,12 +458,40 @@ impl Display for BasicBlock {
     }
 }
 
+
+/// An IR place. This is used in SIR and TIR to describe the address of a piece of data.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum IPlace {
+    /// The IPlace describes a value as an Local+offset pair.
+    Val(Local, usize),
+    /// The IPlace describes a reference to a value as an Local+offset pair.
+    Ref(Local, usize),
+    /// The IPlace describes a constant.
+    Const(Constant),
+    /// A construct which we have no lowering for yet.
+    Unimplemented(String),
+}
+
+impl Display for IPlace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Val(l, offs) => write!(f, "Val({}+{}", l.0, offs),
+            Self::Ref(l, offs) => write!(f, "Ref({}+{}", l.0, offs),
+            Self::Const(c) => write!(f, "{}", c),
+            Self::Unimplemented(c) => write!(f, "{}", c),
+        }
+    }
+}
+
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
     /// Do nothing.
     Nop,
-    /// An assignment.
-    Assign(Place, Rvalue),
+    /// Assigns the local variable on the left to the `IPlace` on the right.
+    Assign(Local, IPlace),
+    /// Stores the content addressed by the right hand side into the left hand side.
+    IStore(IPlace, IPlace),
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
     Enter(CallOperand, Vec<Operand>, Option<Place>, u32),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
@@ -479,89 +508,90 @@ pub enum Statement {
 }
 
 impl Statement {
-    /// Returns a vector of locals that this SIR statement *may* define.
-    /// Whether or not the local is actually defined depends upon whether this is the first write
-    /// into the local (there is no explicit liveness marker in SIR/TIR).
-    pub fn maybe_defined_locals(&self) -> Vec<Local> {
-        let mut ret = Vec::new();
+    ///// Returns a vector of locals that this SIR statement *may* define.
+    ///// Whether or not the local is actually defined depends upon whether this is the first write
+    ///// into the local (there is no explicit liveness marker in SIR/TIR).
+    //pub fn maybe_defined_locals(&self) -> Vec<Local> {
+    //    let mut ret = Vec::new();
 
-        match self {
-            Statement::Nop => (),
-            Statement::Assign(place, _rval) => place.push_maybe_defined_locals(&mut ret),
-            Statement::Enter(_target, args, dest, start_idx) => {
-                if let Some(dest) = dest {
-                    dest.push_maybe_defined_locals(&mut ret);
-                }
-                for idx in 0..args.len() {
-                    // + 1 to skip return value.
-                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                }
-            }
-            Statement::Leave => (),
-            Statement::StorageDead(_) => (),
-            Statement::Call(_target, _args, dest) => {
-                if let Some(dest) = dest {
-                    dest.push_maybe_defined_locals(&mut ret);
-                }
-            }
-            Statement::Unimplemented(_) => (),
-        }
-        ret
-    }
+    //    match self {
+    //        Statement::Nop => (),
+    //        Statement::Assign(place, _rval) => place.push_maybe_defined_locals(&mut ret),
+    //        Statement::Enter(_target, args, dest, start_idx) => {
+    //            if let Some(dest) = dest {
+    //                dest.push_maybe_defined_locals(&mut ret);
+    //            }
+    //            for idx in 0..args.len() {
+    //                // + 1 to skip return value.
+    //                ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+    //            }
+    //        }
+    //        Statement::Leave => (),
+    //        Statement::StorageDead(_) => (),
+    //        Statement::Call(_target, _args, dest) => {
+    //            if let Some(dest) = dest {
+    //                dest.push_maybe_defined_locals(&mut ret);
+    //            }
+    //        }
+    //        Statement::Unimplemented(_) => (),
+    //    }
+    //    ret
+    //}
 
-    /// Returns a vector of locals that this SIR statement uses.
-    /// A definition is considered a use, so this returns a superset of what
-    /// `maybe_defined_locals()` does.
-    pub fn used_locals(&self) -> Vec<Local> {
-        let mut ret = Vec::new();
+    ///// Returns a vector of locals that this SIR statement uses.
+    ///// A definition is considered a use, so this returns a superset of what
+    ///// `maybe_defined_locals()` does.
+    //pub fn used_locals(&self) -> Vec<Local> {
+    //    let mut ret = Vec::new();
 
-        match self {
-            Statement::Nop => (),
-            Statement::Assign(place, rval) => {
-                rval.push_used_locals(&mut ret);
-                place.push_used_locals(&mut ret);
-            }
-            Statement::Enter(_target, args, dest, start_idx) => {
-                if let Some(dest) = dest {
-                    dest.push_used_locals(&mut ret);
-                }
-                for a in args {
-                    a.push_used_locals(&mut ret);
-                }
-                for idx in 0..args.len() {
-                    // + 1 to skip return value.
-                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                }
-            }
-            Statement::Leave => (),
-            Statement::StorageDead(_) => (),
-            Statement::Call(_target, args, dest) => {
-                if let Some(dest) = dest {
-                    dest.push_used_locals(&mut ret);
-                }
-                for a in args {
-                    a.push_used_locals(&mut ret);
-                }
-            }
-            Statement::Unimplemented(_) => (),
-        }
-        ret
-    }
+    //    match self {
+    //        Statement::Nop => (),
+    //        Statement::Assign(place, rval) => {
+    //            rval.push_used_locals(&mut ret);
+    //            place.push_used_locals(&mut ret);
+    //        }
+    //        Statement::Enter(_target, args, dest, start_idx) => {
+    //            if let Some(dest) = dest {
+    //                dest.push_used_locals(&mut ret);
+    //            }
+    //            for a in args {
+    //                a.push_used_locals(&mut ret);
+    //            }
+    //            for idx in 0..args.len() {
+    //                // + 1 to skip return value.
+    //                ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+    //            }
+    //        }
+    //        Statement::Leave => (),
+    //        Statement::StorageDead(_) => (),
+    //        Statement::Call(_target, args, dest) => {
+    //            if let Some(dest) = dest {
+    //                dest.push_used_locals(&mut ret);
+    //            }
+    //            for a in args {
+    //                a.push_used_locals(&mut ret);
+    //            }
+    //        }
+    //        Statement::Unimplemented(_) => (),
+    //    }
+    //    ret
+    //}
 
-    /// Returns true if the statement may affect locals besides those appearing in the statement.
-    pub fn may_have_side_effects(&self) -> bool {
-        match self {
-            Statement::Call(..) | Statement::Enter(..) => true,
-            _ => false,
-        }
-    }
+    ///// Returns true if the statement may affect locals besides those appearing in the statement.
+    //pub fn may_have_side_effects(&self) -> bool {
+    //    match self {
+    //        Statement::Call(..) | Statement::Enter(..) => true,
+    //        _ => false,
+    //    }
+    //}
 }
 
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Statement::Nop => write!(f, "nop"),
-            Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
+            Statement::Assign(l, r) => write!(f, "Assign({}, {})", l, r),
+            Statement::IStore(l, r) => write!(f, "IStore({}, {})", l, r),
             Statement::Enter(op, args, dest, off) => {
                 let args_s = args
                     .iter()
@@ -892,9 +922,9 @@ pub enum Terminator {
     },
     Call {
         operand: CallOperand,
-        args: Vec<Operand>,
+        args: Vec<IPlace>,
         /// The return value and basic block to continue at, if the call converges.
-        destination: Option<(Place, BasicBlockIndex)>,
+        destination: Option<(IPlace, BasicBlockIndex)>,
     },
     /// The value in `cond` must equal to `expected` to advance to `target_bb`.
     Assert {

@@ -2,6 +2,8 @@
 //! into a Tracing IR (TIR) Trace using the SIR found in the `.yk_sir` section of the currently
 //! running executable.
 
+#![allow(unused_variables, dead_code)]
+
 use super::SirTrace;
 use crate::{
     errors::InvalidTraceError,
@@ -54,40 +56,40 @@ impl<'a> TirTrace<'a> {
         defined_locals.insert(INTERP_STEP_ARG);
         def_sites.insert(INTERP_STEP_ARG, 0);
 
-        let mut update_defined_locals = |op: &Statement, op_idx: usize| {
-            // Locals reported by `maybe_defined_locals()` are only defined if they are not already
-            // defined.
-            //
-            // FIXME: Note that we are unable to detect variables which are defined outside of the
-            // traced code and which are not introduced as trace inputs. The user should not do
-            // this, but it would be nice to detect that somehow and panic.
-            let newly_defined = op
-                .maybe_defined_locals()
-                .iter()
-                .filter_map(|l| {
-                    if !defined_locals.contains(l) {
-                        Some(*l)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<Local>>();
-            defined_locals.extend(&newly_defined);
-            for d in newly_defined {
-                def_sites.insert(d, op_idx);
-            }
+        //let mut update_defined_locals = |op: &Statement, op_idx: usize| {
+        //    // Locals reported by `maybe_defined_locals()` are only defined if they are not already
+        //    // defined.
+        //    //
+        //    // FIXME: Note that we are unable to detect variables which are defined outside of the
+        //    // traced code and which are not introduced as trace inputs. The user should not do
+        //    // this, but it would be nice to detect that somehow and panic.
+        //    let newly_defined = op
+        //        .maybe_defined_locals()
+        //        .iter()
+        //        .filter_map(|l| {
+        //            if !defined_locals.contains(l) {
+        //                Some(*l)
+        //            } else {
+        //                None
+        //            }
+        //        })
+        //        .collect::<Vec<Local>>();
+        //    defined_locals.extend(&newly_defined);
+        //    for d in newly_defined {
+        //        def_sites.insert(d, op_idx);
+        //    }
 
-            for lcl in op.used_locals() {
-                // The trace inputs local is regarded as being live for the whole trace.
-                if lcl == INTERP_STEP_ARG {
-                    continue;
-                }
-                if !defined_locals.contains(&lcl) {
-                    panic!("undefined local: {}", lcl);
-                }
-                last_use_sites.insert(lcl, op_idx);
-            }
-        };
+        //    for lcl in op.used_locals() {
+        //        // The trace inputs local is regarded as being live for the whole trace.
+        //        if lcl == INTERP_STEP_ARG {
+        //            continue;
+        //        }
+        //        if !defined_locals.contains(&lcl) {
+        //            panic!("undefined local: {}", lcl);
+        //        }
+        //        last_use_sites.insert(lcl, op_idx);
+        //    }
+        //};
 
         let mut in_interp_step = false;
         while let Some(loc) = itr.next() {
@@ -159,7 +161,7 @@ impl<'a> TirTrace<'a> {
                         }
                     };
 
-                    update_defined_locals(&op, ops.len());
+                    //update_defined_locals(&op, ops.len());
                     ops.push(TirOp::Statement(op));
                 }
             }
@@ -267,7 +269,7 @@ impl<'a> TirTrace<'a> {
                 _ => None
             };
             if let Some(stmt) = stmt {
-                update_defined_locals(&stmt, ops.len());
+                //update_defined_locals(&stmt, ops.len());
                 ops.push(TirOp::Statement(stmt));
             }
 
