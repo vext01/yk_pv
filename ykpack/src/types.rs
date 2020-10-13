@@ -493,8 +493,8 @@ pub enum IPlace {
 impl Display for IPlace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Val(l, offs) => write!(f, "Val({}+{}", l.0, offs),
-            Self::Ref(l, offs) => write!(f, "Ref({}+{}", l.0, offs),
+            Self::Val(l, d) => write!(f, "Val({}{})", l, d),
+            Self::Ref(l, d) => write!(f, "Ref({}{})", l, d),
             Self::Const(c) => write!(f, "{}", c),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
@@ -510,7 +510,7 @@ pub enum Statement {
     /// Stores the content addressed by the right hand side into the left hand side.
     IStore(IPlace, IPlace),
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
-    Enter(CallOperand, Vec<Operand>, Option<Place>, u32),
+    Enter(CallOperand, Vec<Operand>, Option<IPlace>, u32),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
@@ -518,7 +518,7 @@ pub enum Statement {
     StorageDead(Local),
     /// A (non-inlined) call from a TIR trace to a binary symbol using the system ABI. This does
     /// not appear in SIR.
-    Call(CallOperand, Vec<Operand>, Option<Place>),
+    Call(CallOperand, Vec<Operand>, Option<IPlace>),
     /// Any unimplemented lowering maps to this variant.
     /// The string inside is the stringified MIR statement.
     Unimplemented(String),

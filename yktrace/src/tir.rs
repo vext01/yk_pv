@@ -16,8 +16,8 @@ use std::{
     fmt::{self, Display}
 };
 pub use ykpack::{
-    BinOp, CallOperand, Constant, ConstantInt, Local, LocalDecl, LocalIndex, Operand, Place,
-    PlaceBase, Projection, Rvalue, SignedInt, Statement, Terminator, UnsignedInt
+    BinOp, CallOperand, Constant, ConstantInt, IPlace, Local, LocalDecl, LocalIndex, Operand,
+    Place, PlaceBase, Projection, Rvalue, SignedInt, Statement, Terminator, UnsignedInt
 };
 
 /// A TIR trace is conceptually a straight-line path through the SIR with guarded speculation.
@@ -140,19 +140,18 @@ impl<'a> TirTrace<'a> {
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
-                        Statement::Assign(place, rvalue) => {
+                        Statement::Assign(local, iplace) => {
                             if body.flags & ykpack::bodyflags::INTERP_STEP != 0 {
-                                if let Place {
-                                    local: Local(0), ..
-                                } = place
-                                {
+                                if local == &Local(0) {
                                     continue;
                                 }
                             }
-                            let newplace = rnm.rename_place(&place, body);
-                            let newrvalue = rnm.rename_rvalue(&rvalue, body);
-                            Statement::Assign(newplace, newrvalue)
+                            let new_local = rnm.rename_local(local, body);
+                            // FIXME rename iplace.
+                            let new_iplace = rnm.rename_iplace(&iplace, body);
+                            Statement::Assign(new_local, new_iplace)
                         }
+                        Statement::IStore(..) => todo!(),
                         Statement::Nop => stmt.clone(),
                         Statement::Unimplemented(_) => stmt.clone(),
                         // The following statements kinds are specific to TIR and cannot appear in SIR.
@@ -203,13 +202,13 @@ impl<'a> TirTrace<'a> {
                     // `Local`s during trace compilation.
                     let ret_val = dest
                         .as_ref()
-                        .map(|(ret_val, _)| rnm.rename_place(&ret_val, body))
+                        .map(|(ret_val, _)| rnm.rename_iplace(&ret_val, body))
                         .unwrap();
 
                     if let Some(callee_sym) = op.symbol() {
                         // We know the symbol name of the callee at least.
                         // Rename all `Local`s within the arguments.
-                        let newargs = rnm.rename_args(&args, body);
+                        let newargs = rnm.rename_args(args, body);
                         let op = if let Some(callbody) = sir.bodies.get(callee_sym) {
                             // We have SIR for the callee, so it will appear inlined in the trace
                             // and we only need to emit Enter/Leave statements.
@@ -414,17 +413,18 @@ impl VarRenamer {
         }
     }
 
-    fn enter(&mut self, num_locals: usize, dest: Place) {
+    fn enter(&mut self, num_locals: usize, dest: IPlace) {
+        todo!();
         // When entering an inlined function call set the offset to the current accumulator. Then
         // increment the accumulator by the number of locals in the current function. Also add the
         // offset to the stack, so we can restore it once we leave the inlined function call again.
-        self.offset = self.acc.unwrap();
-        self.stack.push(self.offset);
-        match self.acc.as_mut() {
-            Some(v) => *v += num_locals as u32,
-            None => {}
-        }
-        self.returns.push(dest);
+        // self.offset = self.acc.unwrap();
+        // self.stack.push(self.offset);
+        // match self.acc.as_mut() {
+        //     Some(v) => *v += num_locals as u32,
+        //     None => {}
+        // }
+        // self.returns.push(dest);
     }
 
     fn leave(&mut self) {
@@ -439,10 +439,15 @@ impl VarRenamer {
         }
     }
 
-    fn rename_args(&mut self, args: &Vec<Operand>, body: &ykpack::Body) -> Vec<Operand> {
-        args.iter()
-            .map(|op| self.rename_operand(&op, body))
-            .collect()
+    fn rename_iplace(&mut self, iplace: &IPlace, body: &ykpack::Body) -> IPlace {
+        todo!();
+    }
+
+    fn rename_args(&mut self, args: &Vec<IPlace>, body: &ykpack::Body) -> Vec<Operand> {
+        todo!();
+        //args.iter()
+        //    .map(|op| self.rename_operand(&op, body))
+        //    .collect()
     }
 
     fn rename_rvalue(&mut self, rvalue: &Rvalue, body: &ykpack::Body) -> Rvalue {
@@ -618,11 +623,12 @@ impl fmt::Display for TirOp {
 impl TirOp {
     /// Returns true if the operation may affect locals besides those appearing in the operation.
     fn may_have_side_effects(&self) -> bool {
-        if let TirOp::Statement(s) = self {
-            s.may_have_side_effects()
-        } else {
-            false
-        }
+        todo!();
+        //if let TirOp::Statement(s) = self {
+        //    s.may_have_side_effects()
+        //} else {
+        //    false
+        //}
     }
 }
 
