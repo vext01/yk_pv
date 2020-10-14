@@ -471,7 +471,13 @@ pub enum Derivative {
 impl Display for Derivative {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ByteOffset(offs) => write!(f, "+{}", offs),
+            Self::ByteOffset(offs) => {
+                if *offs != 0 {
+                    write!(f, "+{}", offs)
+                } else {
+                    Ok(())
+                }
+            },
             Self::RuntimeField(idx) => write!(f, ".{}", idx),
         }
     }
