@@ -515,6 +515,8 @@ pub enum Statement {
     Assign(Local, IPlace),
     /// Stores the content addressed by the right hand side into the left hand side.
     IStore(Local, Local),
+    /// Binary operations.
+    BinaryOp{dest: Local, op: BinOp, opnd1: Local, opnd2: Local, checked: bool},
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
     Enter(CallOperand, Vec<Local>, Option<Local>, u32),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
@@ -615,6 +617,9 @@ impl Display for Statement {
             Statement::Nop => write!(f, "nop"),
             Statement::Assign(l, r) => write!(f, "Assign({}, {})", l, r),
             Statement::IStore(l, r) => write!(f, "IStore({}, {})", l, r),
+            Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
+                write!(f, "BinaryOp({}, {}, {}, {}, {}", dest, op, opnd1, opnd2, checked)
+            },
             Statement::Enter(op, args, dest, off) => {
                 let args_s = args
                     .iter()

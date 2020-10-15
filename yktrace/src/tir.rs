@@ -152,6 +152,7 @@ impl<'a> TirTrace<'a> {
                             Statement::Assign(new_local, new_iplace)
                         }
                         Statement::IStore(..) => todo!(),
+                        Statement::BinaryOp{..} => todo!(),
                         Statement::Nop => stmt.clone(),
                         Statement::Unimplemented(_) => stmt.clone(),
                         // The following statements kinds are specific to TIR and cannot appear in SIR.
