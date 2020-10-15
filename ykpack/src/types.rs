@@ -514,9 +514,9 @@ pub enum Statement {
     /// Assigns the local variable on the left to the `IPlace` on the right.
     Assign(Local, IPlace),
     /// Stores the content addressed by the right hand side into the left hand side.
-    IStore(IPlace, IPlace),
+    IStore(Local, Local),
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
-    Enter(CallOperand, Vec<Operand>, Option<IPlace>, u32),
+    Enter(CallOperand, Vec<Local>, Option<Local>, u32),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
@@ -524,7 +524,7 @@ pub enum Statement {
     StorageDead(Local),
     /// A (non-inlined) call from a TIR trace to a binary symbol using the system ABI. This does
     /// not appear in SIR.
-    Call(CallOperand, Vec<Operand>, Option<IPlace>),
+    Call(CallOperand, Vec<Local>, Option<Local>),
     /// Any unimplemented lowering maps to this variant.
     /// The string inside is the stringified MIR statement.
     Unimplemented(String),
@@ -945,9 +945,9 @@ pub enum Terminator {
     },
     Call {
         operand: CallOperand,
-        args: Vec<IPlace>,
+        args: Vec<Local>,
         /// The return value and basic block to continue at, if the call converges.
-        destination: Option<(IPlace, BasicBlockIndex)>,
+        destination: Option<(Local, BasicBlockIndex)>,
     },
     /// The value in `cond` must equal to `expected` to advance to `target_bb`.
     Assert {
