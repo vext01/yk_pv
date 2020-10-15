@@ -487,11 +487,11 @@ impl Display for Derivative {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum IPlace {
     /// The IPlace describes a value as an Local+offset pair.
-    Val(Local, Derivative),
-    /// The IPlace describes a reference to a value as an Local+offset pair.
-    Ref(Local, Derivative),
+    Val{local: Local, offs: u32, ty: TypeId},
+    // The IPlace describes a reference to a value as an Local+offset pair.
+    //Ref(Local, Derivative),
     /// The IPlace describes a constant.
-    Const(Constant),
+    Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
     Unimplemented(String),
 }
@@ -499,9 +499,9 @@ pub enum IPlace {
 impl Display for IPlace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Val(l, d) => write!(f, "Val({}{})", l, d),
-            Self::Ref(l, d) => write!(f, "Ref({}{})", l, d),
-            Self::Const(c) => write!(f, "{}", c),
+            Self::Val{local, offs, ty: _ty} => write!(f, "Val({}+{})", local, offs),
+            //Self::Ref(l, d) => write!(f, "Ref({}{})", l, d),
+            Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
     }
@@ -514,11 +514,11 @@ pub enum Statement {
     /// Assigns the local variable on the left to the `IPlace` on the right.
     Assign(Local, IPlace),
     /// Stores the content addressed by the right hand side into the left hand side.
-    IStore(Local, Local),
+    IStore(IPlace, IPlace),
     /// Binary operations.
-    BinaryOp{dest: Local, op: BinOp, opnd1: Local, opnd2: Local, checked: bool},
+    BinaryOp{dest: IPlace, op: BinOp, opnd1: IPlace, opnd2: IPlace, checked: bool},
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
-    Enter(CallOperand, Vec<Local>, Option<Local>, u32),
+    Enter(CallOperand, Vec<IPlace>, Option<IPlace>, u32),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
@@ -526,7 +526,7 @@ pub enum Statement {
     StorageDead(Local),
     /// A (non-inlined) call from a TIR trace to a binary symbol using the system ABI. This does
     /// not appear in SIR.
-    Call(CallOperand, Vec<Local>, Option<Local>),
+    Call(CallOperand, Vec<IPlace>, Option<IPlace>),
     /// Any unimplemented lowering maps to this variant.
     /// The string inside is the stringified MIR statement.
     Unimplemented(String),
@@ -618,7 +618,7 @@ impl Display for Statement {
             Statement::Assign(l, r) => write!(f, "Assign({}, {})", l, r),
             Statement::IStore(l, r) => write!(f, "IStore({}, {})", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
-                write!(f, "BinaryOp({}, {}, {}, {}, {}", dest, op, opnd1, opnd2, checked)
+                write!(f, "BinaryOp({}, {}, {}, {}, {})", dest, op, opnd1, opnd2, checked)
             },
             Statement::Enter(op, args, dest, off) => {
                 let args_s = args
@@ -950,9 +950,9 @@ pub enum Terminator {
     },
     Call {
         operand: CallOperand,
-        args: Vec<Local>,
+        args: Vec<IPlace>,
         /// The return value and basic block to continue at, if the call converges.
-        destination: Option<(Local, BasicBlockIndex)>,
+        destination: Option<(IPlace, BasicBlockIndex)>,
     },
     /// The value in `cond` must equal to `expected` to advance to `target_bb`.
     Assert {
