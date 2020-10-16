@@ -514,14 +514,16 @@ impl Display for IPlace {
 pub enum Statement {
     /// Do nothing.
     Nop,
-    /// Assigns the local variable on the left to the `IPlace` on the right.
-    Assign(Local, IPlace),
+    // Assigns the local variable on the left to the `IPlace` on the right.
+    //ssign(Local, IPlace),
     /// Stores the content addressed by the right hand side into the left hand side.
     IStore(IPlace, IPlace),
-    /// Binary operations.
+    /// Binary operations. FIXME dest should be a local?
     BinaryOp{dest: IPlace, op: BinOp, opnd1: IPlace, opnd2: IPlace, checked: bool},
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
     Enter(CallOperand, Vec<IPlace>, Option<IPlace>, u32),
+    /// Makes a reference.
+    MkRef(Local, IPlace),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
@@ -620,8 +622,9 @@ impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Statement::Nop => write!(f, "nop"),
-            Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
-            Statement::IStore(l, r) => write!(f, "[{}] = {}", l, r),
+            //Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
+            Statement::MkRef(l, r) => write!(f, "{} = &{}", l, r),
+            Statement::IStore(l, r) => write!(f, "{} = {}", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
                 let c = if *checked { "c" } else { "" };
                 write!(f, "{} = {} {}{} {})", dest, opnd1, op, c, opnd2)

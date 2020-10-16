@@ -140,17 +140,18 @@ impl<'a> TirTrace<'a> {
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
-                        Statement::Assign(local, iplace) => {
-                            if body.flags & ykpack::bodyflags::INTERP_STEP != 0 {
-                                if local == &Local(0) {
-                                    continue;
-                                }
-                            }
-                            let new_local = rnm.rename_local(local, body);
-                            // FIXME rename iplace.
-                            let new_iplace = rnm.rename_iplace(&iplace, body);
-                            Statement::Assign(new_local, new_iplace)
-                        }
+                        //Statement::Assign(local, iplace) => {
+                        //    if body.flags & ykpack::bodyflags::INTERP_STEP != 0 {
+                        //        if local == &Local(0) {
+                        //            continue;
+                        //        }
+                        //    }
+                        //    let new_local = rnm.rename_local(local, body);
+                        //    // FIXME rename iplace.
+                        //    let new_iplace = rnm.rename_iplace(&iplace, body);
+                        //    Statement::Assign(new_local, new_iplace)
+                        //}
+                        Statement::MkRef(..) => todo!(),
                         Statement::IStore(..) => todo!(),
                         Statement::BinaryOp{..} => todo!(),
                         Statement::Nop => stmt.clone(),
