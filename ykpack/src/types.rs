@@ -620,10 +620,11 @@ impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Statement::Nop => write!(f, "nop"),
-            Statement::Assign(l, r) => write!(f, "Assign({}, {})", l, r),
-            Statement::IStore(l, r) => write!(f, "IStore({}, {})", l, r),
+            Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
+            Statement::IStore(l, r) => write!(f, "[{}] = {}", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
-                write!(f, "BinaryOp({}, {}, {}, {}, {})", dest, op, opnd1, opnd2, checked)
+                let c = if *checked { "c" } else { "" };
+                write!(f, "{} = {} {}{} {})", dest, opnd1, op, c, opnd2)
             },
             Statement::Enter(op, args, dest, off) => {
                 let args_s = args
@@ -1062,23 +1063,23 @@ pub enum BinOp {
 impl Display for BinOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            BinOp::Add => "add",
-            BinOp::Sub => "sub",
-            BinOp::Mul => "mul",
-            BinOp::Div => "div",
-            BinOp::Rem => "rem",
-            BinOp::BitXor => "bit_xor",
-            BinOp::BitAnd => "bit_and",
-            BinOp::BitOr => "bit_or",
-            BinOp::Shl => "shl",
-            BinOp::Shr => "shr",
-            BinOp::Eq => "eq",
-            BinOp::Lt => "lt",
-            BinOp::Le => "le",
-            BinOp::Ne => "ne",
-            BinOp::Ge => "ge",
-            BinOp::Gt => "gt",
-            BinOp::Offset => "offset",
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::BitXor => "^",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
+            BinOp::Eq => "==",
+            BinOp::Lt => "<",
+            BinOp::Le => "<=",
+            BinOp::Ne => "!=",
+            BinOp::Ge => ">=",
+            BinOp::Gt => ">",
+            BinOp::Offset => "offs",
         };
         write!(f, "{}", s)
     }
