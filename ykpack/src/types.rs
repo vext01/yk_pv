@@ -488,8 +488,8 @@ impl Display for Derivative {
 pub enum IPlace {
     /// The IPlace describes a value as an Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
-    // The IPlace describes a reference to a value as an Local+offset pair.
-    //Ref(Local, Derivative),
+    /// The IPlace describes a value which itself is a reference.
+    Ref{local: Local, offs: u32, ty: TypeId},
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
@@ -500,7 +500,7 @@ impl Display for IPlace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Val{local, offs, ty: _ty} => write!(f, "Val({}+{})", local, offs),
-            //Self::Ref(l, d) => write!(f, "Ref({}{})", l, d),
+            Self::Ref{local, offs, ty: _ty} => write!(f, "Ref({}+{})", local, offs),
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
