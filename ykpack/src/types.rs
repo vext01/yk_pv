@@ -452,6 +452,9 @@ impl BasicBlock {
 impl Display for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for s in self.stmts.iter() {
+            if !matches!(s, Statement::Debug(_)) {
+                write!(f, "    ")?; // extra indent for readability when debug instrs printed.
+            }
             write!(f, "        {}\n", s)?;
         }
         write!(f, "        {}", self.term)
@@ -530,6 +533,8 @@ pub enum Statement {
     /// Any unimplemented lowering maps to this variant.
     /// The string inside is the stringified MIR statement.
     Unimplemented(String),
+    /// A "debug" instruction to help us while we develop.
+    Debug(String),
 }
 
 impl Statement {
@@ -648,6 +653,7 @@ impl Display for Statement {
                 };
                 write!(f, "{} = call({}, [{}])", dest_s, op, args_s)
             }
+            Statement::Debug(s) => write!(f, "--> {}", s),
             Statement::Unimplemented(mir_stmt) => write!(f, "unimplemented_stmt: {}", mir_stmt),
         }
     }

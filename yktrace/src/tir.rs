@@ -154,6 +154,7 @@ impl<'a> TirTrace<'a> {
                         Statement::IStore(..) => todo!(),
                         Statement::BinaryOp{..} => todo!(),
                         Statement::Nop => stmt.clone(),
+                        Statement::Debug(_) => continue,
                         Statement::Unimplemented(_) => stmt.clone(),
                         // The following statements kinds are specific to TIR and cannot appear in SIR.
                         Statement::Call(..) | Statement::Enter(..) | Statement::Leave => {
@@ -203,7 +204,7 @@ impl<'a> TirTrace<'a> {
                     // `Local`s during trace compilation.
                     let ret_val = dest
                         .as_ref()
-                        .map(|(ret_val, _)| rnm.rename_local(&ret_val, body))
+                        .map(|(ret_val, _)| rnm.rename_iplace(&ret_val, body))
                         .unwrap();
 
                     if let Some(callee_sym) = op.symbol() {
@@ -414,7 +415,7 @@ impl VarRenamer {
         }
     }
 
-    fn enter(&mut self, num_locals: usize, dest: Local) {
+    fn enter(&mut self, num_locals: usize, dest: IPlace) {
         todo!();
         // When entering an inlined function call set the offset to the current accumulator. Then
         // increment the accumulator by the number of locals in the current function. Also add the
@@ -444,7 +445,7 @@ impl VarRenamer {
         todo!();
     }
 
-    fn rename_args(&mut self, args: &Vec<Local>, body: &ykpack::Body) -> Vec<Local> {
+    fn rename_args(&mut self, args: &Vec<IPlace>, body: &ykpack::Body) -> Vec<IPlace> {
         todo!();
         //args.iter()
         //    .map(|op| self.rename_operand(&op, body))
