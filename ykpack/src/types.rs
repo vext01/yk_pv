@@ -466,8 +466,8 @@ impl Display for BasicBlock {
 pub enum IPlace {
     /// The IPlace describes a value as an Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
-    /// The IPlace describes a value which itself is a reference.
-    Ref{local: Local, offs: u32, ty: TypeId},
+    // The IPlace describes a value which itself is a reference.
+    //Ref{local: Local, offs: u32, ty: TypeId},
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
@@ -479,18 +479,18 @@ impl Display for IPlace {
         match self {
             Self::Val{local, offs, ty: _ty} => {
                 if *offs != 0 {
-                    write!(f, "$v{}+{}", local.0, offs)
+                    write!(f, "{}+{}", local, offs)
                 } else {
-                    write!(f, "$v{}", local.0)
+                    write!(f, "{}", local)
                 }
             },
-            Self::Ref{local, offs, ty: _ty} => {
-                if *offs != 0 {
-                    write!(f, "$r{}+{}", local.0, offs)
-                } else {
-                    write!(f, "$r{}", local.0)
-                }
-            },
+            //Self::Ref{local, offs, ty: _ty} => {
+            //    if *offs != 0 {
+            //        write!(f, "$r{}+{}", local.0, offs)
+            //    } else {
+            //        write!(f, "$r{}", local.0)
+            //    }
+            //},
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
@@ -613,8 +613,8 @@ impl Display for Statement {
             Statement::MkRef(l, r) => write!(f, "{} = &{}", l, r),
             Statement::IStore(l, r) => write!(f, "{} = {}", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
-                let c = if *checked { "c" } else { "" };
-                write!(f, "{} = {} {}{} {})", dest, opnd1, op, c, opnd2)
+                let c = if *checked { " (checked)" } else { "" };
+                write!(f, "{} = {} {} {}{}", dest, opnd1, op, opnd2, c)
             },
             Statement::Enter(op, args, dest, off) => {
                 let args_s = args
