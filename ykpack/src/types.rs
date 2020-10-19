@@ -461,31 +461,6 @@ impl Display for BasicBlock {
     }
 }
 
-/// Describes a place derived (via projection) from a local variable.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub enum Derivative {
-    /// The byte offset of a field or index which could be statically computed.
-    ByteOffset(usize),
-    /// The field number whose offset can only be known at runtime. For example, with an enum the
-    /// byte offset would depend upon the runtime variant.
-    RuntimeField(u32),
-}
-
-impl Display for Derivative {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ByteOffset(offs) => {
-                if *offs != 0 {
-                    write!(f, "+{}", offs)
-                } else {
-                    Ok(())
-                }
-            },
-            Self::RuntimeField(idx) => write!(f, ".{}", idx),
-        }
-    }
-}
-
 /// An IR place. This is used in SIR and TIR to describe the address of a piece of data.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum IPlace {
@@ -502,8 +477,20 @@ pub enum IPlace {
 impl Display for IPlace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Val{local, offs, ty: _ty} => write!(f, "Val({}+{})", local, offs),
-            Self::Ref{local, offs, ty: _ty} => write!(f, "Ref({}+{})", local, offs),
+            Self::Val{local, offs, ty: _ty} => {
+                if *offs != 0 {
+                    write!(f, "$v{}+{}", local.0, offs)
+                } else {
+                    write!(f, "$v{}", local.0)
+                }
+            },
+            Self::Ref{local, offs, ty: _ty} => {
+                if *offs != 0 {
+                    write!(f, "$r{}+{}", local.0, offs)
+                } else {
+                    write!(f, "$r{}", local.0)
+                }
+            },
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
@@ -523,7 +510,7 @@ pub enum Statement {
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
     Enter(CallOperand, Vec<IPlace>, Option<IPlace>, u32),
     /// Makes a reference.
-    MkRef(Local, IPlace),
+    MkRef(IPlace, IPlace),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
