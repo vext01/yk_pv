@@ -497,6 +497,16 @@ impl Display for IPlace {
     }
 }
 
+impl IPlace {
+    fn push_used_locals(&self, v: &mut Vec<Local>) {
+        match self {
+            Self::Val{local, ..} => v.push(*local),
+            Self::Const{..} => (),
+            Self::Unimplemented(_) => (),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
     /// Do nothing.
@@ -557,44 +567,55 @@ impl Statement {
     //    ret
     //}
 
-    ///// Returns a vector of locals that this SIR statement uses.
-    ///// A definition is considered a use, so this returns a superset of what
-    ///// `maybe_defined_locals()` does.
-    //pub fn used_locals(&self) -> Vec<Local> {
-    //    let mut ret = Vec::new();
+    /// Returns a vector of locals that this SIR statement uses.
+    /// A definition is considered a use, so this returns a superset of what
+    /// `maybe_defined_locals()` does.
+    /// FIXME above
+    pub fn used_locals(&self) -> Vec<Local> {
+        let mut ret = Vec::new();
 
-    //    match self {
-    //        Statement::Nop => (),
-    //        Statement::Assign(place, rval) => {
-    //            rval.push_used_locals(&mut ret);
-    //            place.push_used_locals(&mut ret);
-    //        }
-    //        Statement::Enter(_target, args, dest, start_idx) => {
-    //            if let Some(dest) = dest {
-    //                dest.push_used_locals(&mut ret);
-    //            }
-    //            for a in args {
-    //                a.push_used_locals(&mut ret);
-    //            }
-    //            for idx in 0..args.len() {
-    //                // + 1 to skip return value.
-    //                ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-    //            }
-    //        }
-    //        Statement::Leave => (),
-    //        Statement::StorageDead(_) => (),
-    //        Statement::Call(_target, args, dest) => {
-    //            if let Some(dest) = dest {
-    //                dest.push_used_locals(&mut ret);
-    //            }
-    //            for a in args {
-    //                a.push_used_locals(&mut ret);
-    //            }
-    //        }
-    //        Statement::Unimplemented(_) => (),
-    //    }
-    //    ret
-    //}
+        match self {
+            Statement::Nop => (),
+            Statement::Debug(_) => (),
+            Statement::MkRef(dest, src) => {
+                dest.push_used_locals(&mut ret);
+                src.push_used_locals(&mut ret);
+            }
+            Statement::BinaryOp{dest, opnd1, opnd2, ..} => {
+                opnd1.push_used_locals(&mut ret);
+                opnd2.push_used_locals(&mut ret);
+                dest.push_used_locals(&mut ret);
+            }
+            Statement::IStore(ip1, ip2) => {
+                ip1.push_used_locals(&mut ret);
+                ip2.push_used_locals(&mut ret);
+            }
+            Statement::Enter(_target, args, dest, start_idx) => {
+                if let Some(dest) = dest {
+                    dest.push_used_locals(&mut ret);
+                }
+                for a in args {
+                    a.push_used_locals(&mut ret);
+                }
+                for idx in 0..args.len() {
+                    // + 1 to skip return value.
+                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+                }
+            }
+            Statement::Leave => (),
+            Statement::StorageDead(_) => (),
+            Statement::Call(_target, args, dest) => {
+                if let Some(dest) = dest {
+                    dest.push_used_locals(&mut ret);
+                }
+                for a in args {
+                    a.push_used_locals(&mut ret);
+                }
+            }
+            Statement::Unimplemented(_) => (),
+        }
+        ret
+    }
 
     ///// Returns true if the statement may affect locals besides those appearing in the statement.
     //pub fn may_have_side_effects(&self) -> bool {
