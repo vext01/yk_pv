@@ -140,17 +140,6 @@ impl<'a> TirTrace<'a> {
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
-                        //Statement::Assign(local, iplace) => {
-                        //    if body.flags & ykpack::bodyflags::INTERP_STEP != 0 {
-                        //        if local == &Local(0) {
-                        //            continue;
-                        //        }
-                        //    }
-                        //    let new_local = rnm.rename_local(local, body);
-                        //    // FIXME rename iplace.
-                        //    let new_iplace = rnm.rename_iplace(&iplace, body);
-                        //    Statement::Assign(new_local, new_iplace)
-                        //}
                         Statement::MkRef(dest, src) => Statement::MkRef(rnm.rename_iplace(dest, body), rnm.rename_iplace(src, body)),
                         Statement::IStore(dest, src) => Statement::IStore(rnm.rename_iplace(dest, body), rnm.rename_iplace(src, body)),
                         Statement::BinaryOp{dest, op, opnd1, opnd2, checked} =>
@@ -390,9 +379,10 @@ struct VarRenamer {
     /// Accumulator keeping track of total number of variables used. Needed to use different
     /// offsets for consecutive inlined function calls.
     acc: Option<u32>,
-    /// Stores the return variables of inlined function calls. Used to replace `$0` during
-    /// renaming.
-    returns: Vec<IPlace>,
+    // Stores the return variables of inlined function calls. Used to replace `$0` during
+    // renaming.
+    // FIXME put this optimisation back?
+    //returns: Vec<IPlace>,
     /// Maps a renamed local to its local declaration.
     local_decls: HashMap<Local, LocalDecl>
 }
@@ -403,7 +393,7 @@ impl VarRenamer {
             stack: vec![0],
             offset: 0,
             acc: None,
-            returns: Vec::new(),
+            //returns: Vec::new(),
             local_decls: HashMap::new()
         }
     }
@@ -433,14 +423,14 @@ impl VarRenamer {
             Some(v) => *v += num_locals as u32,
             None => {}
         }
-        self.returns.push(dest);
+        //self.returns.push(dest);
     }
 
     fn leave(&mut self) {
         // When we leave an inlined function call, we pop the previous offset from the stack,
         // reverting the offset to what it was before the function was entered.
         self.stack.pop();
-        self.returns.pop();
+        //self.returns.pop();
         if let Some(v) = self.stack.last() {
             self.offset = *v;
         } else {
@@ -450,7 +440,8 @@ impl VarRenamer {
 
     fn rename_iplace(&mut self, ip: &IPlace, body: &ykpack::Body) -> IPlace {
         match ip {
-            IPlace::Val{local, offs, ty} => IPlace::Val{local: self.rename_local(local, body), offs: *offs, ty: *ty},
+            IPlace::Val{local, offs, ty} =>
+                IPlace::Val{local: self.rename_local(local, body), offs: *offs, ty: *ty},
             IPlace::Const{..} => ip.clone(),
             IPlace::Unimplemented(..) => ip.clone(),
         }
@@ -542,13 +533,18 @@ impl VarRenamer {
     //}
 
     fn rename_local(&mut self, local: &Local, body: &ykpack::Body) -> Local {
-        let renamed = Local(local.0 + self.offset);
-        self.local_decls.insert(
-            renamed.clone(),
-            body.local_decls[usize::try_from(local.0).unwrap()].clone()
-        );
+        //let renamed = if local.0 == 0 {
+        //    self.returns.last().expect("expected a return local")
+        //} else {
+            Local(local.0 + self.offset)
+        //};
 
-        renamed
+        //self.local_decls.insert(
+        //    renamed.clone(),
+        //    body.local_decls[usize::try_from(local.0).unwrap()].clone()
+        //);
+
+        //renamed
     }
 }
 

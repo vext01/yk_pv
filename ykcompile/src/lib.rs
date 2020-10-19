@@ -37,13 +37,14 @@ lazy_static! {
 
     // Register partitioning. These arrays must not overlap.
     // FIXME add callee save registers to the pool. Trace code will need to save/restore them.
-    static ref TEMP_REGS: [u8; 3] = [R9.code(), R10.code(), R11.code()];
-    static ref LOCAL_REGS: [u8; 3] = [R8.code(), RDX.code(), RCX.code()];
+    //static ref TEMP_REGS: [u8; 3] = [R9.code(), R10.code(), R11.code()];
+    static ref TMP_REG: u8 = R11.code(); // Used for memory to memory moves.
+    static ref LOCAL_REGS: [u8; 5] = [R10.code(), R9.code(), R8.code(), RDX.code(), RCX.code()];
 }
 
-fn is_temp_reg(reg: u8) -> bool {
-    TEMP_REGS.contains(&reg)
-}
+//fn is_temp_reg(reg: u8) -> bool {
+//    TEMP_REGS.contains(&reg)
+//}
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub enum CompileError {
@@ -167,8 +168,8 @@ pub struct TraceCompiler<TT> {
     register_content_map: HashMap<u8, RegAlloc>,
     /// Maps trace locals to their location (register, stack).
     variable_location_map: HashMap<Local, Location>,
-    /// Available temproary registers.
-    temp_regs: Vec<u8>,
+    ///// Available temproary registers.
+    //temp_regs: Vec<u8>,
     /// Local decls of the tir trace.
     local_decls: HashMap<Local, LocalDecl>,
     /// Stack builder for allocating objects on the stack.
@@ -222,202 +223,202 @@ impl<TT> TraceCompiler<TT> {
         }
     }
 
-    fn place_to_location(&mut self, p: &Place, store: bool) -> (Location, Ty) {
-        if !p.projection.is_empty() {
-            self.resolve_projection(p, store)
-        } else {
-            let ty = self.place_ty(&Place::from(p.local)).clone();
-            (self.local_to_location(p.local), ty)
-        }
-    }
+    //fn place_to_location(&mut self, p: &Place, store: bool) -> (Location, Ty) {
+    //    if !p.projection.is_empty() {
+    //        self.resolve_projection(p, store)
+    //    } else {
+    //        let ty = self.place_ty(&Place::from(p.local)).clone();
+    //        (self.local_to_location(p.local), ty)
+    //    }
+    //}
 
-    /// Takes a `Place`, resolves all projections, and returns a `Location` containing the result.
-    fn resolve_projection(&mut self, p: &Place, store: bool) -> (Location, Ty) {
-        let mut curloc = self.local_to_location(p.local);
-        let mut ty = self.place_ty(&Place::from(p.local)).clone();
-        let mut iter = p.projection.iter().peekable();
-        while let Some(proj) = iter.next() {
-            match proj {
-                Projection::Field(idx) => match ty {
-                    Ty::Struct(ref sty) => {
-                        let offs = sty.fields.offsets[usize::try_from(*idx).unwrap()];
-                        let ftyid = &sty.fields.tys[usize::try_from(*idx).unwrap()];
-                        curloc = self.resolve_field(curloc, ftyid, offs, store);
-                        ty = SIR.ty(ftyid).clone();
-                    }
-                    Ty::Tuple(ref tty) => {
-                        let offs = tty.fields.offsets[usize::try_from(*idx).unwrap()];
-                        let ftyid = &tty.fields.tys[usize::try_from(*idx).unwrap()];
-                        curloc = self.resolve_field(curloc, ftyid, offs, store);
-                        ty = SIR.ty(ftyid).clone();
-                    }
-                    Ty::Ref(_) => unreachable!("ref"),
-                    _ => todo!("{:?}", ty),
-                },
-                Projection::Deref => {
-                    // FIXME We currently assume Deref is only called on Refs.
+    ///// Takes a `Place`, resolves all projections, and returns a `Location` containing the result.
+    //fn resolve_projection(&mut self, p: &Place, store: bool) -> (Location, Ty) {
+    //    let mut curloc = self.local_to_location(p.local);
+    //    let mut ty = self.place_ty(&Place::from(p.local)).clone();
+    //    let mut iter = p.projection.iter().peekable();
+    //    while let Some(proj) = iter.next() {
+    //        match proj {
+    //            Projection::Field(idx) => match ty {
+    //                Ty::Struct(ref sty) => {
+    //                    let offs = sty.fields.offsets[usize::try_from(*idx).unwrap()];
+    //                    let ftyid = &sty.fields.tys[usize::try_from(*idx).unwrap()];
+    //                    curloc = self.resolve_field(curloc, ftyid, offs, store);
+    //                    ty = SIR.ty(ftyid).clone();
+    //                }
+    //                Ty::Tuple(ref tty) => {
+    //                    let offs = tty.fields.offsets[usize::try_from(*idx).unwrap()];
+    //                    let ftyid = &tty.fields.tys[usize::try_from(*idx).unwrap()];
+    //                    curloc = self.resolve_field(curloc, ftyid, offs, store);
+    //                    ty = SIR.ty(ftyid).clone();
+    //                }
+    //                Ty::Ref(_) => unreachable!("ref"),
+    //                _ => todo!("{:?}", ty),
+    //            },
+    //            Projection::Deref => {
+    //                // FIXME We currently assume Deref is only called on Refs.
 
-                    // Are we dereferencing a reference, if so, what's its type.
-                    let tyid = match ty {
-                        Ty::Ref(rty) => rty.clone(),
-                        _ => todo!(),
-                    };
+    //                // Are we dereferencing a reference, if so, what's its type.
+    //                let tyid = match ty {
+    //                    Ty::Ref(rty) => rty.clone(),
+    //                    _ => todo!(),
+    //                };
 
-                    // Special case: If the `Deref` is followed by an `Index` or `Field`
-                    // projection, we defer resolution to them and don't copy the value.
-                    // FIXME Do we need to check all remaining projections?
-                    let copy = match iter.peek() {
-                        Some(Projection::Index(_)) => false,
-                        Some(Projection::Field(_)) => false,
-                        _ => true,
-                    };
-                    if Self::is_copyable(&tyid) && copy {
-                        match SIR.ty(&tyid) {
-                            Ty::Array(_) | Ty::Tuple(_) | Ty::Struct(_) => todo!(),
-                            _ => {}
-                        }
-                        // Copy referenced value into a temporary.
-                        let temp = self.create_temporary();
-                        match &curloc {
-                            Location::Mem(ro) => {
-                                // Deref value and copy it.
-                                dynasm!(self.asm
-                                    ; mov Rq(temp), [Rq(ro.reg) + ro.offs]
-                                );
-                            }
-                            Location::Register(reg) | Location::Addr(reg) => {
-                                dynasm!(self.asm
-                                    ; mov Rq(temp), Rq(reg)
-                                );
-                            }
-                            _ => unreachable!(),
-                        };
-                        self.free_if_temp(curloc);
-                        curloc = if store {
-                            Location::Addr(temp)
-                        } else {
-                            dynasm!(self.asm
-                                ; mov Rq(temp), [Rq(temp)]
-                            );
-                            Location::Register(temp)
-                        };
-                        ty = SIR.ty(&tyid).clone();
-                    } else {
-                        // Dereferencing a pointer, where the pointee is uncopyable, converts the
-                        // location to an address.
-                        let temp = self.create_temporary();
-                        ty = SIR.ty(&tyid).clone(); // FIXME dedup
-                        match &curloc {
-                            Location::Mem(ro) => {
-                                dynasm!(self.asm
-                                    ; mov Rq(temp), [Rq(ro.reg) + ro.offs]
-                                );
-                            }
-                            Location::Register(reg) | Location::Addr(reg) => {
-                                dynasm!(self.asm
-                                    ; mov Rq(temp), Rq(reg)
-                                );
-                            }
-                            _ => unreachable!(),
-                        }
-                        self.free_if_temp(curloc);
-                        curloc = Location::Addr(temp);
-                    }
-                }
-                Projection::Index(local) => {
-                    // Get the type of the array elements.
-                    let elem_ty = match ty {
-                        Ty::Array(ety) => SIR.ty(&ety),
-                        Ty::Ref(tyid) => match SIR.ty(&tyid) {
-                            Ty::Array(ety) => SIR.ty(&ety),
-                            _ => unreachable!(),
-                        },
-                        _ => unreachable!(),
-                    };
-                    // Compute the offset of this index.
-                    let temp = self.create_temporary();
-                    match self.local_to_location(*local) {
-                        Location::Register(reg) => {
-                            dynasm!(self.asm
-                                ; imul Rq(temp), Rq(reg), elem_ty.size() as i32
-                            );
-                        }
-                        Location::Mem(ro) => {
-                            dynasm!(self.asm
-                                ; imul Rq(temp), [Rq(ro.reg) + ro.offs], elem_ty.size() as i32
-                            );
-                        }
-                        _ => todo!(),
-                    }
-                    // Add together the index and the array address and retrieve its value.
-                    match &curloc {
-                        Location::Mem(ro) => {
-                            dynasm!(self.asm
-                                ; add Rq(temp), [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        Location::Register(_) => todo!(),
-                        Location::Addr(reg) => {
-                            dynasm!(self.asm
-                                ; add Rq(temp), Rq(reg)
-                            );
-                        }
-                        _ => unreachable!(),
-                    }
-                    self.free_if_temp(curloc);
-                    curloc = if store {
-                        Location::Addr(temp)
-                    } else {
-                        dynasm!(self.asm
-                            ; mov Rq(temp), [Rq(temp)]
-                        );
-                        Location::Register(temp)
-                    };
-                    ty = elem_ty.clone();
-                }
-                _ => todo!("{}", p),
-            }
-        }
-        (curloc, ty)
-    }
+    //                // Special case: If the `Deref` is followed by an `Index` or `Field`
+    //                // projection, we defer resolution to them and don't copy the value.
+    //                // FIXME Do we need to check all remaining projections?
+    //                let copy = match iter.peek() {
+    //                    Some(Projection::Index(_)) => false,
+    //                    Some(Projection::Field(_)) => false,
+    //                    _ => true,
+    //                };
+    //                if Self::is_copyable(&tyid) && copy {
+    //                    match SIR.ty(&tyid) {
+    //                        Ty::Array(_) | Ty::Tuple(_) | Ty::Struct(_) => todo!(),
+    //                        _ => {}
+    //                    }
+    //                    // Copy referenced value into a temporary.
+    //                    let temp = self.create_temporary();
+    //                    match &curloc {
+    //                        Location::Mem(ro) => {
+    //                            // Deref value and copy it.
+    //                            dynasm!(self.asm
+    //                                ; mov Rq(temp), [Rq(ro.reg) + ro.offs]
+    //                            );
+    //                        }
+    //                        Location::Register(reg) | Location::Addr(reg) => {
+    //                            dynasm!(self.asm
+    //                                ; mov Rq(temp), Rq(reg)
+    //                            );
+    //                        }
+    //                        _ => unreachable!(),
+    //                    };
+    //                    //self.free_if_temp(curloc);
+    //                    curloc = if store {
+    //                        Location::Addr(temp)
+    //                    } else {
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(temp), [Rq(temp)]
+    //                        );
+    //                        Location::Register(temp)
+    //                    };
+    //                    ty = SIR.ty(&tyid).clone();
+    //                } else {
+    //                    // Dereferencing a pointer, where the pointee is uncopyable, converts the
+    //                    // location to an address.
+    //                    let temp = self.create_temporary();
+    //                    ty = SIR.ty(&tyid).clone(); // FIXME dedup
+    //                    match &curloc {
+    //                        Location::Mem(ro) => {
+    //                            dynasm!(self.asm
+    //                                ; mov Rq(temp), [Rq(ro.reg) + ro.offs]
+    //                            );
+    //                        }
+    //                        Location::Register(reg) | Location::Addr(reg) => {
+    //                            dynasm!(self.asm
+    //                                ; mov Rq(temp), Rq(reg)
+    //                            );
+    //                        }
+    //                        _ => unreachable!(),
+    //                    }
+    //                    //self.free_if_temp(curloc);
+    //                    curloc = Location::Addr(temp);
+    //                }
+    //            }
+    //            Projection::Index(local) => {
+    //                // Get the type of the array elements.
+    //                let elem_ty = match ty {
+    //                    Ty::Array(ety) => SIR.ty(&ety),
+    //                    Ty::Ref(tyid) => match SIR.ty(&tyid) {
+    //                        Ty::Array(ety) => SIR.ty(&ety),
+    //                        _ => unreachable!(),
+    //                    },
+    //                    _ => unreachable!(),
+    //                };
+    //                // Compute the offset of this index.
+    //                let temp = self.create_temporary();
+    //                match self.local_to_location(*local) {
+    //                    Location::Register(reg) => {
+    //                        dynasm!(self.asm
+    //                            ; imul Rq(temp), Rq(reg), elem_ty.size() as i32
+    //                        );
+    //                    }
+    //                    Location::Mem(ro) => {
+    //                        dynasm!(self.asm
+    //                            ; imul Rq(temp), [Rq(ro.reg) + ro.offs], elem_ty.size() as i32
+    //                        );
+    //                    }
+    //                    _ => todo!(),
+    //                }
+    //                // Add together the index and the array address and retrieve its value.
+    //                match &curloc {
+    //                    Location::Mem(ro) => {
+    //                        dynasm!(self.asm
+    //                            ; add Rq(temp), [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    Location::Register(_) => todo!(),
+    //                    Location::Addr(reg) => {
+    //                        dynasm!(self.asm
+    //                            ; add Rq(temp), Rq(reg)
+    //                        );
+    //                    }
+    //                    _ => unreachable!(),
+    //                }
+    //                //self.free_if_temp(curloc);
+    //                curloc = if store {
+    //                    Location::Addr(temp)
+    //                } else {
+    //                    dynasm!(self.asm
+    //                        ; mov Rq(temp), [Rq(temp)]
+    //                    );
+    //                    Location::Register(temp)
+    //                };
+    //                ty = elem_ty.clone();
+    //            }
+    //            _ => todo!("{}", p),
+    //        }
+    //    }
+    //    (curloc, ty)
+    //}
 
-    fn resolve_field(&mut self, loc: Location, tyid: &TypeId, offs: u64, store: bool) -> Location {
-        // Convert Mem into Addr.
-        let temp = self.create_temporary();
-        match &loc {
-            Location::Mem(ro) => {
-                dynasm!(self.asm
-                    ; lea Rq(temp), [Rq(ro.reg) + ro.offs]
-                );
-            }
-            Location::Register(reg) | Location::Addr(reg) => {
-                dynasm!(self.asm
-                    ; mov Rq(temp), Rq(reg)
-                );
-            }
-            _ => unreachable!("{:?}", loc),
-        };
-        self.free_if_temp(loc);
+    //fn resolve_field(&mut self, loc: Location, tyid: &TypeId, offs: u64, store: bool) -> Location {
+    //    // Convert Mem into Addr.
+    //    let temp = self.create_temporary();
+    //    match &loc {
+    //        Location::Mem(ro) => {
+    //            dynasm!(self.asm
+    //                ; lea Rq(temp), [Rq(ro.reg) + ro.offs]
+    //            );
+    //        }
+    //        Location::Register(reg) | Location::Addr(reg) => {
+    //            dynasm!(self.asm
+    //                ; mov Rq(temp), Rq(reg)
+    //            );
+    //        }
+    //        _ => unreachable!("{:?}", loc),
+    //    };
+    //    //self.free_if_temp(loc);
 
-        // Get index.
-        dynasm!(self.asm
-            ; lea Rq(temp), [Rq(temp) + i32::try_from(offs).unwrap()]
-        );
+    //    // Get index.
+    //    dynasm!(self.asm
+    //        ; lea Rq(temp), [Rq(temp) + i32::try_from(offs).unwrap()]
+    //    );
 
-        if store {
-            return Location::Addr(temp);
-        }
-        if Self::can_live_in_register(tyid) {
-            dynasm!(self.asm
-                ; mov Rq(temp), [Rq(temp)]
-            );
-            Location::Register(temp)
-        } else if Self::is_copyable(tyid) {
-            todo!()
-        } else {
-            Location::Addr(temp)
-        }
-    }
+    //    if store {
+    //        return Location::Addr(temp);
+    //    }
+    //    if Self::can_live_in_register(tyid) {
+    //        dynasm!(self.asm
+    //            ; mov Rq(temp), [Rq(temp)]
+    //        );
+    //        Location::Register(temp)
+    //    } else if Self::is_copyable(tyid) {
+    //        todo!()
+    //    } else {
+    //        Location::Addr(temp)
+    //    }
+    //}
 
     /// Given a local, returns the register allocation for it, or, if there is no allocation yet,
     /// performs one.
@@ -466,33 +467,33 @@ impl<TT> TraceCompiler<TT> {
         self.stack_builder.alloc(ty.size(), ty.align())
     }
 
-    /// Find a free register to be used as a temporary. If no free register can be found, a
-    /// register containing a Local is selected and its content spilled to the stack.
-    fn create_temporary(&mut self) -> u8 {
-        self.temp_regs
-            .pop()
-            .unwrap_or_else(|| panic!("Exhausted temporary registers!"))
-    }
+    ///// Find a free register to be used as a temporary. If no free register can be found, a
+    ///// register containing a Local is selected and its content spilled to the stack.
+    //fn create_temporary(&mut self) -> u8 {
+    //    self.temp_regs
+    //        .pop()
+    //        .unwrap_or_else(|| panic!("Exhausted temporary registers!"))
+    //}
 
     /// Free the temporary register so it can be re-used.
-    fn free_if_temp(&mut self, loc: Location) {
-        match loc {
-            Location::Register(reg) | Location::Addr(reg) => {
-                if is_temp_reg(reg) {
-                    debug_assert!(!self.temp_regs.contains(&reg), "double free temp reg");
-                    self.temp_regs.push(reg);
-                }
-            }
-            Location::Mem { .. } => {}
-            _ => unreachable!(),
-        }
-    }
+    //fn free_if_temp(&mut self, loc: Location) {
+    //    match loc {
+    //        Location::Register(reg) | Location::Addr(reg) => {
+    //            if is_temp_reg(reg) {
+    //                debug_assert!(!self.temp_regs.contains(&reg), "double free temp reg");
+    //                self.temp_regs.push(reg);
+    //            }
+    //        }
+    //        Location::Mem { .. } => {}
+    //        _ => unreachable!(),
+    //    }
+    //}
 
     /// Notifies the register allocator that the register allocated to `local` may now be re-used.
     fn free_register(&mut self, local: &Local) -> Result<(), CompileError> {
         match self.variable_location_map.get(local) {
             Some(Location::Register(reg)) | Some(Location::Addr(reg)) => {
-                debug_assert!(!is_temp_reg(*reg));
+                //debug_assert!(!is_temp_reg(*reg));
                 // If this local is currently stored in a register, free it.
                 self.register_content_map.insert(*reg, RegAlloc::Free);
             }
@@ -504,12 +505,12 @@ impl<TT> TraceCompiler<TT> {
         Ok(())
     }
 
-    /// Returns whether the register content map contains any temporaries. This is used as a sanity
-    /// check at the end of a trace to make sure we haven't forgotten to free temporaries at the
-    /// end of an operation.
-    fn check_temporaries(&self) -> bool {
-        self.temp_regs.len() == TEMP_REGS.len()
-    }
+    ///// Returns whether the register content map contains any temporaries. This is used as a sanity
+    ///// check at the end of a trace to make sure we haven't forgotten to free temporaries at the
+    ///// end of an operation.
+    //fn check_temporaries(&self) -> bool {
+    //    self.temp_regs.len() == TEMP_REGS.len()
+    //}
 
     /// Copy bytes from one memory location to another.
     fn copy_memory(&mut self, dest: &RegAndOffset, src: &RegAndOffset, size: u64) {
@@ -530,97 +531,97 @@ impl<TT> TraceCompiler<TT> {
         self.caller_save_restore();
     }
 
-    /// Get the type of a place.
-    fn place_ty(&self, p: &Place) -> &Ty {
-        SIR.ty(&self.local_decls[&p.local].ty)
-    }
+    ///// Get the type of a place.
+    //fn place_ty(&self, p: &Place) -> &Ty {
+    //    SIR.ty(&self.local_decls[&p.local].ty)
+    //}
 
-    /// Codegen a `Place` into a `Location`.
-    fn c_place(&mut self, p: &Place) -> Location {
-        self.place_to_location(p, false).0
-    }
+    ///// Codegen a `Place` into a `Location`.
+    //fn c_place(&mut self, p: &Place) -> Location {
+    //    self.place_to_location(p, false).0
+    //}
 
-    /// Codegen a reference into a `Location`.
-    fn c_ref(&mut self, p: &Place) -> Location {
-        // Deal with the special case `&*`, i.e. referencing a `Deref` on a reference just returns
-        // the reference.
-        // FIXME Make sure the special case is only triggered for `&` on Refs and nothing else,
-        // e.g. `&*`.
-        if let Some(pj) = p.projection.get(0) {
-            if matches!(pj, Projection::Deref)
-                && matches!(SIR.ty(&self.local_decls[&p.local].ty), Ty::Ref(_))
-            {
-                // Clone the projection while removing the `Deref` from the end.
-                let mut newproj = Vec::new();
-                for p in p.projection.iter().take(p.projection.len() - 1) {
-                    newproj.push(p.clone());
-                }
-                let np = Place {
-                    local: p.local,
-                    projection: newproj,
-                };
-                let (rloc, _) = self.place_to_location(&np, false);
-                let reg = self.create_temporary();
-                match rloc {
-                    Location::Register(reg2) => {
-                        dynasm!(self.asm
-                            ; mov Rq(reg), Rq(reg2)
-                        );
-                    }
-                    _ => todo!(),
-                }
-                self.free_if_temp(rloc);
-                return Location::Register(reg);
-            }
-        }
+    ///// Codegen a reference into a `Location`.
+    //fn c_ref(&mut self, p: &Place) -> Location {
+    //    // Deal with the special case `&*`, i.e. referencing a `Deref` on a reference just returns
+    //    // the reference.
+    //    // FIXME Make sure the special case is only triggered for `&` on Refs and nothing else,
+    //    // e.g. `&*`.
+    //    if let Some(pj) = p.projection.get(0) {
+    //        if matches!(pj, Projection::Deref)
+    //            && matches!(SIR.ty(&self.local_decls[&p.local].ty), Ty::Ref(_))
+    //        {
+    //            // Clone the projection while removing the `Deref` from the end.
+    //            let mut newproj = Vec::new();
+    //            for p in p.projection.iter().take(p.projection.len() - 1) {
+    //                newproj.push(p.clone());
+    //            }
+    //            let np = Place {
+    //                local: p.local,
+    //                projection: newproj,
+    //            };
+    //            let (rloc, _) = self.place_to_location(&np, false);
+    //            let reg = self.create_temporary();
+    //            match rloc {
+    //                Location::Register(reg2) => {
+    //                    dynasm!(self.asm
+    //                        ; mov Rq(reg), Rq(reg2)
+    //                    );
+    //                }
+    //                _ => todo!(),
+    //            }
+    //            //self.free_if_temp(rloc);
+    //            return Location::Register(reg);
+    //        }
+    //    }
 
-        // We can only reference Locals living on the stack. So move it there if it doesn't.
-        let reg = self.create_temporary();
-        let rloc = match self.place_to_location(p, false) {
-            (Location::Register(reg2), _) => {
-                let loc = self.stack_builder.alloc(8, 8);
-                let ro = loc.unwrap_mem();
-                dynasm!(self.asm
-                    ; mov [Rq(ro.reg) + ro.offs], Rq(reg2)
-                );
-                // This Local lives now on the stack...
-                self.variable_location_map.insert(p.local, loc.clone());
-                // ...so we can free its old register.
-                debug_assert!(!is_temp_reg(reg2));
-                self.register_content_map.insert(reg2, RegAlloc::Free);
-                loc
-            }
-            (loc, _) => loc,
-        };
-        // Now create the reference.
-        match &rloc {
-            Location::Mem(ro) => {
-                dynasm!(self.asm
-                    ; lea Rq(reg), [Rq(ro.reg) + ro.offs]
-                );
-            }
-            _ => unreachable!(),
-        };
-        self.free_if_temp(rloc);
-        Location::Register(reg)
-    }
+    //    // We can only reference Locals living on the stack. So move it there if it doesn't.
+    //    let reg = self.create_temporary();
+    //    let rloc = match self.place_to_location(p, false) {
+    //        (Location::Register(reg2), _) => {
+    //            let loc = self.stack_builder.alloc(8, 8);
+    //            let ro = loc.unwrap_mem();
+    //            dynasm!(self.asm
+    //                ; mov [Rq(ro.reg) + ro.offs], Rq(reg2)
+    //            );
+    //            // This Local lives now on the stack...
+    //            self.variable_location_map.insert(p.local, loc.clone());
+    //            // ...so we can free its old register.
+    //            //debug_assert!(!is_temp_reg(reg2));
+    //            self.register_content_map.insert(reg2, RegAlloc::Free);
+    //            loc
+    //        }
+    //        (loc, _) => loc,
+    //    };
+    //    // Now create the reference.
+    //    match &rloc {
+    //        Location::Mem(ro) => {
+    //            dynasm!(self.asm
+    //                ; lea Rq(reg), [Rq(ro.reg) + ro.offs]
+    //            );
+    //        }
+    //        _ => unreachable!(),
+    //    };
+    //    //self.free_if_temp(rloc);
+    //    Location::Register(reg)
+    //}
 
-    fn c_len(&mut self, p: &Place) -> Location {
-        let (loc, _) = self.place_to_location(p, true);
-        let dst = self.create_temporary();
-        match loc {
-            Location::Addr(src) => {
-                // A slice &[T] is a fat pointer with its length in the last 8 bytes.
-                dynasm!(self.asm
-                    ; mov Rq(dst), [Rq(src) + 8]
-                );
-            }
-            // FIXME Can `Len` be called on non-references?
-            _ => unreachable!(),
-        }
-        self.free_if_temp(loc);
-        Location::Register(dst)
-    }
+    //fn c_len(&mut self, p: &Place) -> Location {
+    //    let (loc, _) = self.place_to_location(p, true);
+    //    let dst = self.create_temporary();
+    //    match loc {
+    //        Location::Addr(src) => {
+    //            // A slice &[T] is a fat pointer with its length in the last 8 bytes.
+    //            dynasm!(self.asm
+    //                ; mov Rq(dst), [Rq(src) + 8]
+    //            );
+    //        }
+    //        // FIXME Can `Len` be called on non-references?
+    //        _ => unreachable!(),
+    //    }
+    //    //self.free_if_temp(loc);
+    //    Location::Register(dst)
+    //}
 
     /// Emit a NOP operation.
     fn nop(&mut self) {
@@ -630,41 +631,41 @@ impl<TT> TraceCompiler<TT> {
     }
 
     /// Codegen a constant integer into a `Location`.
-    fn c_constint(&mut self, constant: &ConstantInt) -> Location {
-        let reg = self.create_temporary();
-        let c_val = constant.i64_cast();
-        dynasm!(self.asm
-            ; mov Rq(reg), QWORD c_val
-        );
-        Location::Register(reg)
-    }
+    //fn c_constint(&mut self, constant: &ConstantInt) -> Location {
+    //    let reg = self.create_temporary();
+    //    let c_val = constant.i64_cast();
+    //    dynasm!(self.asm
+    //        ; mov Rq(reg), QWORD c_val
+    //    );
+    //    Location::Register(reg)
+    //}
 
-    /// Codegen a Boolean into a `Location`.
-    fn c_bool(&mut self, b: bool) -> Location {
-        let reg = self.create_temporary();
-        dynasm!(self.asm
-            ; mov Rq(reg), QWORD b as i64
-        );
-        Location::Register(reg)
-    }
+    ///// Codegen a Boolean into a `Location`.
+    //fn c_bool(&mut self, b: bool) -> Location {
+    //    let reg = self.create_temporary();
+    //    dynasm!(self.asm
+    //        ; mov Rq(reg), QWORD b as i64
+    //    );
+    //    Location::Register(reg)
+    //}
 
-    /// Compile the entry into an inlined function call.
-    fn c_enter(&mut self, args: &Vec<Operand>, off: u32) {
-        // Move call arguments into registers.
-        for (op, i) in args.iter().zip(1..) {
-            let loc = match op {
-                Operand::Place(p) => self.c_place(p),
-                Operand::Constant(c) => match c {
-                    Constant::Int(ci) => self.c_constint(ci),
-                    Constant::Bool(b) => self.c_bool(*b),
-                    c => todo!("{}", c),
-                },
-            };
-            let arg_idx = Place::from(Local(i + off));
-            self.store(&arg_idx, loc.clone());
-            self.free_if_temp(loc);
-        }
-    }
+    ///// Compile the entry into an inlined function call.
+    //fn c_enter(&mut self, args: &Vec<Operand>, off: u32) {
+    //    // Move call arguments into registers.
+    //    for (op, i) in args.iter().zip(1..) {
+    //        let loc = match op {
+    //            Operand::Place(p) => self.c_place(p),
+    //            Operand::Constant(c) => match c {
+    //                Constant::Int(ci) => self.c_constint(ci),
+    //                Constant::Bool(b) => self.c_bool(*b),
+    //                c => todo!("{}", c),
+    //            },
+    //        };
+    //        let arg_idx = Place::from(Local(i + off));
+    //        self.store(&arg_idx, loc.clone());
+    //        //self.free_if_temp(loc);
+    //    }
+    //}
 
     /// Push all of the caller-save registers to the stack.
     fn caller_save(&mut self) {
@@ -684,188 +685,188 @@ impl<TT> TraceCompiler<TT> {
         }
     }
 
-    /// Compile a call to a native symbol using the Sys-V ABI. This is used for occasions where you
-    /// don't want to, or cannot, inline the callee (e.g. it's a foreign function).
-    ///
-    /// For now we do something very simple. There are limitations (FIXME):
-    ///
-    ///  - We assume there are no more than 6 arguments (spilling is not yet implemented).
-    ///
-    ///  - We push all of the callee save registers on the stack, and local variable arguments are
-    ///    then loaded back from the stack into the correct ABI-specified registers. We can
-    ///    optimise this later by only loading an argument from the stack if it cannot be loaded
-    ///    from its original register location (because another argument overwrote it already).
-    ///
-    ///  - We assume the return value fits in rax. 128-bit return values are not yet supported.
-    ///
-    ///  - We don't support varags calls.
-    ///
-    ///  - RAX is clobbered.
-    fn c_call(
-        &mut self,
-        opnd: &CallOperand,
-        args: &Vec<Operand>,
-        dest: &Option<Place>,
-    ) -> Result<(), CompileError> {
-        let sym = if let CallOperand::Fn(sym) = opnd {
-            sym
-        } else {
-            todo!("unknown call target");
-        };
+    ///// Compile a call to a native symbol using the Sys-V ABI. This is used for occasions where you
+    ///// don't want to, or cannot, inline the callee (e.g. it's a foreign function).
+    /////
+    ///// For now we do something very simple. There are limitations (FIXME):
+    /////
+    /////  - We assume there are no more than 6 arguments (spilling is not yet implemented).
+    /////
+    /////  - We push all of the callee save registers on the stack, and local variable arguments are
+    /////    then loaded back from the stack into the correct ABI-specified registers. We can
+    /////    optimise this later by only loading an argument from the stack if it cannot be loaded
+    /////    from its original register location (because another argument overwrote it already).
+    /////
+    /////  - We assume the return value fits in rax. 128-bit return values are not yet supported.
+    /////
+    /////  - We don't support varags calls.
+    /////
+    /////  - RAX is clobbered.
+    //fn c_call(
+    //    &mut self,
+    //    opnd: &CallOperand,
+    //    args: &Vec<Operand>,
+    //    dest: &Option<Place>,
+    //) -> Result<(), CompileError> {
+    //    let sym = if let CallOperand::Fn(sym) = opnd {
+    //        sym
+    //    } else {
+    //        todo!("unknown call target");
+    //    };
 
-        if args.len() > 6 {
-            todo!("call with spilled args");
-        }
+    //    if args.len() > 6 {
+    //        todo!("call with spilled args");
+    //    }
 
-        // Save Sys-V caller save registers to the stack, but skip the one (if there is one) that
-        // will store the return value. It's safe to assume the caller expects this to be
-        // clobbered.
-        //
-        // FIXME: Note that we don't save RAX. Although this is a caller save register, we are
-        // currently using RAX as a general purpose register in parts of the compiler (the register
-        // allocator thus never gives out RAX). In this case we use it to store the result from the
-        // call in its destination, so we must not override it when returning from the call.
-        self.caller_save();
+    //    // Save Sys-V caller save registers to the stack, but skip the one (if there is one) that
+    //    // will store the return value. It's safe to assume the caller expects this to be
+    //    // clobbered.
+    //    //
+    //    // FIXME: Note that we don't save RAX. Although this is a caller save register, we are
+    //    // currently using RAX as a general purpose register in parts of the compiler (the register
+    //    // allocator thus never gives out RAX). In this case we use it to store the result from the
+    //    // call in its destination, so we must not override it when returning from the call.
+    //    self.caller_save();
 
-        // Helper function to find the index of a caller-save register previously pushed to the stack.
-        // The first register pushed is at the highest stack offset (from the stack pointer), hence
-        // reversing the order of `save_regs`.
-        let stack_index = |reg: u8| -> i32 {
-            i32::try_from(
-                CALLER_SAVE_REGS
-                    .iter()
-                    .rev()
-                    .position(|&r| r == reg)
-                    .unwrap(),
-            )
-            .unwrap()
-        };
+    //    // Helper function to find the index of a caller-save register previously pushed to the stack.
+    //    // The first register pushed is at the highest stack offset (from the stack pointer), hence
+    //    // reversing the order of `save_regs`.
+    //    let stack_index = |reg: u8| -> i32 {
+    //        i32::try_from(
+    //            CALLER_SAVE_REGS
+    //                .iter()
+    //                .rev()
+    //                .position(|&r| r == reg)
+    //                .unwrap(),
+    //        )
+    //        .unwrap()
+    //    };
 
-        // Sys-V ABI dictates the first 6 arguments are passed in these registers.
-        // The order is reversed so they pop() in the right order.
-        let mut arg_regs = vec![R9, R8, RCX, RDX, RSI, RDI]
-            .iter()
-            .map(|r| r.code())
-            .collect::<Vec<u8>>();
+    //    // Sys-V ABI dictates the first 6 arguments are passed in these registers.
+    //    // The order is reversed so they pop() in the right order.
+    //    let mut arg_regs = vec![R9, R8, RCX, RDX, RSI, RDI]
+    //        .iter()
+    //        .map(|r| r.code())
+    //        .collect::<Vec<u8>>();
 
-        for arg in args {
-            // `unwrap()` must succeed, as we checked there are no more than 6 args above.
-            let arg_reg = arg_regs.pop().unwrap();
+    //    for arg in args {
+    //        // `unwrap()` must succeed, as we checked there are no more than 6 args above.
+    //        let arg_reg = arg_regs.pop().unwrap();
 
-            match arg {
-                Operand::Place(place) => {
-                    // Load argument back from the stack.
-                    let (loc, _) = self.place_to_location(place, false);
-                    match &loc {
-                        Location::Register(reg) => {
-                            let off = stack_index(*reg) * 8;
-                            dynasm!(self.asm
-                                ; mov Rq(arg_reg), [rsp + off]
-                            );
-                        }
-                        Location::Mem(ro) => {
-                            dynasm!(self.asm
-                                ; mov Rq(arg_reg), [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        Location::Addr(_) | Location::NotLive => unreachable!(),
-                    };
-                    self.free_if_temp(loc);
-                }
-                Operand::Constant(c) => {
-                    dynasm!(self.asm
-                        ; mov Rq(arg_reg), QWORD c.i64_cast()
-                    );
-                }
-            };
-        }
+    //        match arg {
+    //            Operand::Place(place) => {
+    //                // Load argument back from the stack.
+    //                let (loc, _) = self.place_to_location(place, false);
+    //                match &loc {
+    //                    Location::Register(reg) => {
+    //                        let off = stack_index(*reg) * 8;
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(arg_reg), [rsp + off]
+    //                        );
+    //                    }
+    //                    Location::Mem(ro) => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(arg_reg), [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    Location::Addr(_) | Location::NotLive => unreachable!(),
+    //                };
+    //                //self.free_if_temp(loc);
+    //            }
+    //            Operand::Constant(c) => {
+    //                dynasm!(self.asm
+    //                    ; mov Rq(arg_reg), QWORD c.i64_cast()
+    //                );
+    //            }
+    //        };
+    //    }
 
-        let sym_addr = if let Some(addr) = self.addr_map.get(sym) {
-            *addr as i64
-        } else {
-            TraceCompiler::<TT>::find_symbol(sym)? as i64
-        };
-        dynasm!(self.asm
-            // In Sys-V ABI, `al` is a hidden argument used to specify the number of vector args
-            // for a vararg call. We don't support this right now, so set it to zero.
-            ; xor rax, rax
-            ; mov r11, QWORD sym_addr
-            ; call r11
-        );
+    //    let sym_addr = if let Some(addr) = self.addr_map.get(sym) {
+    //        *addr as i64
+    //    } else {
+    //        TraceCompiler::<TT>::find_symbol(sym)? as i64
+    //    };
+    //    dynasm!(self.asm
+    //        // In Sys-V ABI, `al` is a hidden argument used to specify the number of vector args
+    //        // for a vararg call. We don't support this right now, so set it to zero.
+    //        ; xor rax, rax
+    //        ; mov r11, QWORD sym_addr
+    //        ; call r11
+    //    );
 
-        // Restore caller-save registers.
-        self.caller_save_restore();
+    //    // Restore caller-save registers.
+    //    self.caller_save_restore();
 
-        if let Some(d) = dest {
-            self.store(d, Location::Register(RAX.code()));
-        }
+    //    if let Some(d) = dest {
+    //        self.store(d, Location::Register(RAX.code()));
+    //    }
 
-        Ok(())
-    }
+    //    Ok(())
+    //}
 
     /// Compile a checked binary operation into a `Location`.
-    fn c_checked_binop(&mut self, binop: &BinOp, op1: &Operand, op2: &Operand) -> Location {
-        // Move `op1` into `dest`.
-        let dest_loc = match op1 {
-            Operand::Place(p) => match self.place_to_location(p, false) {
-                (Location::Mem(ro), ty) => {
-                    let tmp = self.create_temporary();
-                    match ty.size() {
-                        1 => {
-                            dynasm!(self.asm
-                                ; mov Rb(tmp), BYTE [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        2 => {
-                            dynasm!(self.asm
-                                ; mov Rw(tmp), WORD [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        4 => {
-                            dynasm!(self.asm
-                                ; mov Rd(tmp), DWORD [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        8 => {
-                            dynasm!(self.asm
-                                ; mov Rq(tmp), QWORD [Rq(ro.reg) + ro.offs]
-                            );
-                        }
-                        _ => unreachable!(),
-                    }
-                    Location::Register(tmp)
-                }
-                (other, _) => other,
-            },
-            Operand::Constant(Constant::Int(ci)) => self.c_constint(&ci),
-            Operand::Constant(Constant::Bool(_b)) => unreachable!(),
-            Operand::Constant(c) => todo!("{}", c),
-        };
-        let dest = dest_loc.unwrap_reg();
-        // Add together `dest` and `op2`.
-        match op2 {
-            Operand::Place(p) => {
-                let (rloc, _) = self.place_to_location(&p, false);
-                match binop {
-                    BinOp::Add => self.c_checked_add_place(dest, &rloc),
-                    _ => todo!(),
-                }
-                self.free_if_temp(rloc);
-            }
-            Operand::Constant(Constant::Int(ci)) => match binop {
-                BinOp::Add => self.c_checked_add_const(dest, ci),
-                _ => todo!(),
-            },
-            Operand::Constant(Constant::Bool(_b)) => todo!(),
-            Operand::Constant(c) => todo!("{}", c),
-        };
-        // In the future this will set the overflow flag of the tuple in `lloc`, which will be
-        // checked by a guard, allowing us to return from the trace more gracefully.
-        dynasm!(self.asm
-            ; jc ->crash
-        );
-        dest_loc
-    }
+    //fn c_checked_binop(&mut self, binop: &BinOp, op1: &Operand, op2: &Operand) -> Location {
+    //    // Move `op1` into `dest`.
+    //    let dest_loc = match op1 {
+    //        Operand::Place(p) => match self.place_to_location(p, false) {
+    //            (Location::Mem(ro), ty) => {
+    //                let tmp = self.create_temporary();
+    //                match ty.size() {
+    //                    1 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rb(tmp), BYTE [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    2 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rw(tmp), WORD [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    4 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rd(tmp), DWORD [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    8 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(tmp), QWORD [Rq(ro.reg) + ro.offs]
+    //                        );
+    //                    }
+    //                    _ => unreachable!(),
+    //                }
+    //                Location::Register(tmp)
+    //            }
+    //            (other, _) => other,
+    //        },
+    //        Operand::Constant(Constant::Int(ci)) => self.c_constint(&ci),
+    //        Operand::Constant(Constant::Bool(_b)) => unreachable!(),
+    //        Operand::Constant(c) => todo!("{}", c),
+    //    };
+    //    let dest = dest_loc.unwrap_reg();
+    //    // Add together `dest` and `op2`.
+    //    match op2 {
+    //        Operand::Place(p) => {
+    //            let (rloc, _) = self.place_to_location(&p, false);
+    //            match binop {
+    //                BinOp::Add => self.c_checked_add_place(dest, &rloc),
+    //                _ => todo!(),
+    //            }
+    //            //self.free_if_temp(rloc);
+    //        }
+    //        Operand::Constant(Constant::Int(ci)) => match binop {
+    //            BinOp::Add => self.c_checked_add_const(dest, ci),
+    //            _ => todo!(),
+    //        },
+    //        Operand::Constant(Constant::Bool(_b)) => todo!(),
+    //        Operand::Constant(c) => todo!("{}", c),
+    //    };
+    //    // In the future this will set the overflow flag of the tuple in `lloc`, which will be
+    //    // checked by a guard, allowing us to return from the trace more gracefully.
+    //    dynasm!(self.asm
+    //        ; jc ->crash
+    //    );
+    //    dest_loc
+    //}
 
     // FIXME Use a macro to generate funcs for all of the different binary operations.
     // Code-gen the addition of a `Location` to the value in the register `dest_reg`.
@@ -903,215 +904,219 @@ impl<TT> TraceCompiler<TT> {
     /// Compile a TIR statement.
     fn c_statement(&mut self, stmt: &Statement) -> Result<(), CompileError> {
         match stmt {
-            Statement::Assign(l, r) => {
-                let rloc = match r {
-                    Rvalue::Use(Operand::Place(p)) => self.c_place(p),
-                    Rvalue::Use(Operand::Constant(c)) => match c {
-                        Constant::Int(ci) => self.c_constint(ci),
-                        Constant::Bool(b) => self.c_bool(*b),
-                        c => todo!("{}", c),
-                    },
-                    Rvalue::CheckedBinaryOp(binop, op1, op2) => {
-                        let rloc = self.c_checked_binop(binop, op1, op2);
-                        // FIXME deal with overflow
-                        let mut l = l.clone();
-                        l.projection.push(Projection::Field(0));
-                        // FIXME dedup code
-                        self.store(&l, rloc.clone());
-                        self.free_if_temp(rloc);
-                        return Ok(());
-                    }
-                    Rvalue::Ref(p) => self.c_ref(p),
-                    Rvalue::Len(p) => self.c_len(p),
-                    unimpl => todo!("{}", unimpl),
-                };
-                self.store(&l, rloc.clone());
-                self.free_if_temp(rloc);
-            }
-            Statement::Enter(_, args, _dest, off) => self.c_enter(args, *off),
+            //Statement::Assign(l, r) => {
+            //    let rloc = match r {
+            //        Rvalue::Use(Operand::Place(p)) => self.c_place(p),
+            //        Rvalue::Use(Operand::Constant(c)) => match c {
+            //            Constant::Int(ci) => self.c_constint(ci),
+            //            Constant::Bool(b) => self.c_bool(*b),
+            //            c => todo!("{}", c),
+            //        },
+            //        Rvalue::CheckedBinaryOp(binop, op1, op2) => {
+            //            let rloc = self.c_checked_binop(binop, op1, op2);
+            //            // FIXME deal with overflow
+            //            let mut l = l.clone();
+            //            l.projection.push(Projection::Field(0));
+            //            // FIXME dedup code
+            //            self.store(&l, rloc.clone());
+            //            self.free_if_temp(rloc);
+            //            return Ok(());
+            //        }
+            //        Rvalue::Ref(p) => self.c_ref(p),
+            //        Rvalue::Len(p) => self.c_len(p),
+            //        unimpl => todo!("{}", unimpl),
+            //    };
+            //    self.store(&l, rloc.clone());
+            //    self.free_if_temp(rloc);
+            //}
+            Statement::IStore(dest, src) => todo!(),
+            Statement::BinaryOp{..} => todo!(),
+            Statement::MkRef(dest, src) => todo!(),
+            Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
-            Statement::Call(target, args, dest) => self.c_call(target, args, dest)?,
+            Statement::Call(target, args, dest) => todo!(), //self.c_call(target, args, dest)?,
             Statement::Nop => {}
             Statement::Unimplemented(s) => todo!("{:?}", s),
+            Statement::Debug(..) => {},
         }
 
         Ok(())
     }
 
-    /// Store the value in `src_loc` into `dest_plc`.
-    fn store(&mut self, dest_plc: &Place, src_loc: Location) {
-        let (dest_loc, ty) = self.place_to_location(dest_plc, true);
-        match (&dest_loc, &src_loc) {
-            (Location::Addr(dest_reg), Location::Register(src_reg)) => {
-                // If the lhs is a projection that results in a memory address (e.g.
-                // `(*$1).0`), then the value in `dest_reg` is a pointer to store into.
-                match ty.size() {
-                    0 => (), // ZST.
-                    1 => {
-                        dynasm!(self.asm
-                            ; mov [Rq(dest_reg)], Rb(src_reg)
-                        );
-                    }
-                    2 => {
-                        dynasm!(self.asm
-                            ; mov [Rq(dest_reg)], Rw(src_reg)
-                        );
-                    }
-                    4 => {
-                        dynasm!(self.asm
-                            ; mov [Rq(dest_reg)], Rd(src_reg)
-                        );
-                    }
-                    8 => {
-                        dynasm!(self.asm
-                            ; mov [Rq(dest_reg)], Rq(src_reg)
-                        );
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            (Location::Register(dest_reg), Location::Register(src_reg)) => {
-                dynasm!(self.asm
-                    ; mov Rq(dest_reg), Rq(src_reg)
-                );
-            }
-            (Location::Mem(dest_ro), Location::Register(src_reg)) => {
-                match ty.size() {
-                    0 => (), // ZST.
-                    1 => {
-                        dynasm!(self.asm
-                            ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(src_reg)
-                        );
-                    }
-                    2 => {
-                        dynasm!(self.asm
-                            ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(src_reg)
-                        );
-                    }
-                    4 => {
-                        dynasm!(self.asm
-                            ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(src_reg)
-                        );
-                    }
-                    8 => {
-                        dynasm!(self.asm
-                            ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(src_reg)
-                        );
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
-                if ty.size() <= 8 {
-                    let temp = self.create_temporary();
-                    match ty.size() {
-                        0 => (), // ZST.
-                        1 => {
-                            dynasm!(self.asm
-                                ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(temp)
-                            );
-                        }
-                        2 => {
-                            dynasm!(self.asm
-                                ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(temp)
-                            );
-                        }
-                        4 => {
-                            dynasm!(self.asm
-                                ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(temp)
-                            );
-                        }
-                        8 => {
-                            dynasm!(self.asm
-                                ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(temp)
-                            );
-                        }
-                        _ => unreachable!(),
-                    }
-                    self.free_if_temp(Location::Register(temp));
-                } else {
-                    self.copy_memory(dest_ro, src_ro, ty.size());
-                }
-            }
-            //(Location::Register(dest_reg, dest_is_ptr), Location::Mem(src_ro)) => {
-            (Location::Addr(dest_reg), Location::Mem(src_ro)) => {
-                if ty.size() <= 8 {
-                    let temp = self.create_temporary();
-                    match ty.size() {
-                        0 => (), // ZST.
-                        1 => {
-                            dynasm!(self.asm
-                                ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov BYTE [Rq(dest_reg)], Rb(temp)
-                            );
-                        }
-                        2 => {
-                            dynasm!(self.asm
-                                ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov WORD [Rq(dest_reg)], Rw(temp)
-                            );
-                        }
-                        4 => {
-                            dynasm!(self.asm
-                                ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov DWORD [Rq(dest_reg)], Rd(temp)
-                            );
-                        }
-                        8 => {
-                            dynasm!(self.asm
-                                ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
-                                ; mov QWORD [Rq(dest_reg)], Rq(temp)
-                            );
-                        }
-                        _ => unreachable!(),
-                    }
-                    self.free_if_temp(Location::Register(temp));
-                } else {
-                    self.copy_memory(
-                        &RegAndOffset {
-                            reg: *dest_reg,
-                            offs: 0,
-                        },
-                        src_ro,
-                        ty.size(),
-                    );
-                }
-            }
-            (Location::Register(dest_reg), Location::Mem(src_ro)) => {
-                match ty.size() {
-                    0 => (), // ZST.
-                    1 => {
-                        dynasm!(self.asm
-                            ; mov Rb(dest_reg), BYTE [Rq(src_ro.reg) + src_ro.offs]
-                        );
-                    }
-                    2 => {
-                        dynasm!(self.asm
-                            ; mov Rw(dest_reg), WORD [Rq(src_ro.reg) + src_ro.offs]
-                        );
-                    }
-                    4 => {
-                        dynasm!(self.asm
-                            ; mov Rd(dest_reg), DWORD [Rq(src_ro.reg) + src_ro.offs]
-                        );
-                    }
-                    8 => {
-                        dynasm!(self.asm
-                            ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
-                        );
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            _ => unreachable!(),
-        }
-        self.free_if_temp(dest_loc);
-    }
+    ///// Store the value in `src_loc` into `dest_plc`.
+    //fn store(&mut self, dest_plc: &Place, src_loc: Location) {
+    //    let (dest_loc, ty) = self.place_to_location(dest_plc, true);
+    //    match (&dest_loc, &src_loc) {
+    //        (Location::Addr(dest_reg), Location::Register(src_reg)) => {
+    //            // If the lhs is a projection that results in a memory address (e.g.
+    //            // `(*$1).0`), then the value in `dest_reg` is a pointer to store into.
+    //            match ty.size() {
+    //                0 => (), // ZST.
+    //                1 => {
+    //                    dynasm!(self.asm
+    //                        ; mov [Rq(dest_reg)], Rb(src_reg)
+    //                    );
+    //                }
+    //                2 => {
+    //                    dynasm!(self.asm
+    //                        ; mov [Rq(dest_reg)], Rw(src_reg)
+    //                    );
+    //                }
+    //                4 => {
+    //                    dynasm!(self.asm
+    //                        ; mov [Rq(dest_reg)], Rd(src_reg)
+    //                    );
+    //                }
+    //                8 => {
+    //                    dynasm!(self.asm
+    //                        ; mov [Rq(dest_reg)], Rq(src_reg)
+    //                    );
+    //                }
+    //                _ => unreachable!(),
+    //            }
+    //        }
+    //        (Location::Register(dest_reg), Location::Register(src_reg)) => {
+    //            dynasm!(self.asm
+    //                ; mov Rq(dest_reg), Rq(src_reg)
+    //            );
+    //        }
+    //        (Location::Mem(dest_ro), Location::Register(src_reg)) => {
+    //            match ty.size() {
+    //                0 => (), // ZST.
+    //                1 => {
+    //                    dynasm!(self.asm
+    //                        ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(src_reg)
+    //                    );
+    //                }
+    //                2 => {
+    //                    dynasm!(self.asm
+    //                        ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(src_reg)
+    //                    );
+    //                }
+    //                4 => {
+    //                    dynasm!(self.asm
+    //                        ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(src_reg)
+    //                    );
+    //                }
+    //                8 => {
+    //                    dynasm!(self.asm
+    //                        ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(src_reg)
+    //                    );
+    //                }
+    //                _ => unreachable!(),
+    //            }
+    //        }
+    //        (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
+    //            if ty.size() <= 8 {
+    //                let temp = self.create_temporary();
+    //                match ty.size() {
+    //                    0 => (), // ZST.
+    //                    1 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(temp)
+    //                        );
+    //                    }
+    //                    2 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(temp)
+    //                        );
+    //                    }
+    //                    4 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(temp)
+    //                        );
+    //                    }
+    //                    8 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(temp)
+    //                        );
+    //                    }
+    //                    _ => unreachable!(),
+    //                }
+    //                //self.free_if_temp(Location::Register(temp));
+    //            } else {
+    //                self.copy_memory(dest_ro, src_ro, ty.size());
+    //            }
+    //        }
+    //        //(Location::Register(dest_reg, dest_is_ptr), Location::Mem(src_ro)) => {
+    //        (Location::Addr(dest_reg), Location::Mem(src_ro)) => {
+    //            if ty.size() <= 8 {
+    //                let temp = self.create_temporary();
+    //                match ty.size() {
+    //                    0 => (), // ZST.
+    //                    1 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov BYTE [Rq(dest_reg)], Rb(temp)
+    //                        );
+    //                    }
+    //                    2 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov WORD [Rq(dest_reg)], Rw(temp)
+    //                        );
+    //                    }
+    //                    4 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov DWORD [Rq(dest_reg)], Rd(temp)
+    //                        );
+    //                    }
+    //                    8 => {
+    //                        dynasm!(self.asm
+    //                            ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                            ; mov QWORD [Rq(dest_reg)], Rq(temp)
+    //                        );
+    //                    }
+    //                    _ => unreachable!(),
+    //                }
+    //                //self.free_if_temp(Location::Register(temp));
+    //            } else {
+    //                self.copy_memory(
+    //                    &RegAndOffset {
+    //                        reg: *dest_reg,
+    //                        offs: 0,
+    //                    },
+    //                    src_ro,
+    //                    ty.size(),
+    //                );
+    //            }
+    //        }
+    //        (Location::Register(dest_reg), Location::Mem(src_ro)) => {
+    //            match ty.size() {
+    //                0 => (), // ZST.
+    //                1 => {
+    //                    dynasm!(self.asm
+    //                        ; mov Rb(dest_reg), BYTE [Rq(src_ro.reg) + src_ro.offs]
+    //                    );
+    //                }
+    //                2 => {
+    //                    dynasm!(self.asm
+    //                        ; mov Rw(dest_reg), WORD [Rq(src_ro.reg) + src_ro.offs]
+    //                    );
+    //                }
+    //                4 => {
+    //                    dynasm!(self.asm
+    //                        ; mov Rd(dest_reg), DWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                    );
+    //                }
+    //                8 => {
+    //                    dynasm!(self.asm
+    //                        ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+    //                    );
+    //                }
+    //                _ => unreachable!(),
+    //            }
+    //        }
+    //        _ => unreachable!(),
+    //    }
+    //    //self.free_if_temp(dest_loc);
+    //}
 
     /// Compile a guard in the trace, emitting code to abort execution in case the guard fails.
     fn c_guard(&mut self, _grd: &Guard) {
@@ -1232,7 +1237,7 @@ impl<TT> TraceCompiler<TT> {
         let mut tt = tt;
         let mut tc = TraceCompiler::<TT> {
             asm: assembler,
-            temp_regs: Vec::from(*TEMP_REGS),
+            //temp_regs: Vec::from(*TEMP_REGS),
             register_content_map: LOCAL_REGS.iter().map(|r| (*r, RegAlloc::Free)).collect(),
             variable_location_map: HashMap::new(),
             local_decls: tt.local_decls.clone(),
@@ -1258,7 +1263,7 @@ impl<TT> TraceCompiler<TT> {
         }
 
         // Make sure we didn't forget to free some temporaries.
-        assert!(tc.check_temporaries());
+        //assert!(tc.check_temporaries());
         tc.ret();
         tc
     }
@@ -1279,8 +1284,7 @@ impl<TT> TraceCompiler<TT> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompileError, HashMap, Local, Location, RegAlloc, TraceCompiler, LOCAL_REGS, TEMP_REGS,
-    };
+        CompileError, HashMap, Local, Location, RegAlloc, TraceCompiler, LOCAL_REGS};
     use crate::stack_builder::StackBuilder;
     use fm::FMBuilder;
     use libc::{abs, c_void, getuid};
@@ -1330,6 +1334,7 @@ mod tests {
         simple(&mut IO(0));
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);
@@ -1349,7 +1354,7 @@ mod tests {
                 .cloned()
                 .map(|r| (r, RegAlloc::Free))
                 .collect(),
-            temp_regs: Vec::from(*TEMP_REGS),
+            //temp_regs: Vec::from(*TEMP_REGS),
             variable_location_map: HashMap::new(),
             local_decls: HashMap::default(),
             stack_builder: StackBuilder::default(),
@@ -1378,7 +1383,7 @@ mod tests {
                 .cloned()
                 .map(|r| (r, RegAlloc::Free))
                 .collect(),
-            temp_regs: Vec::from(*TEMP_REGS),
+            //temp_regs: Vec::from(*TEMP_REGS),
             variable_location_map: HashMap::new(),
             local_decls,
             stack_builder: StackBuilder::default(),
