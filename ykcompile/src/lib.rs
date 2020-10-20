@@ -935,31 +935,6 @@ impl<TT> TraceCompiler<TT> {
     /// Compile a TIR statement.
     fn c_statement(&mut self, stmt: &Statement) -> Result<(), CompileError> {
         match stmt {
-            //Statement::Assign(l, r) => {
-            //    let rloc = match r {
-            //        Rvalue::Use(Operand::Place(p)) => self.c_place(p),
-            //        Rvalue::Use(Operand::Constant(c)) => match c {
-            //            Constant::Int(ci) => self.c_constint(ci),
-            //            Constant::Bool(b) => self.c_bool(*b),
-            //            c => todo!("{}", c),
-            //        },
-            //        Rvalue::CheckedBinaryOp(binop, op1, op2) => {
-            //            let rloc = self.c_checked_binop(binop, op1, op2);
-            //            // FIXME deal with overflow
-            //            let mut l = l.clone();
-            //            l.projection.push(Projection::Field(0));
-            //            // FIXME dedup code
-            //            self.store(&l, rloc.clone());
-            //            self.free_if_temp(rloc);
-            //            return Ok(());
-            //        }
-            //        Rvalue::Ref(p) => self.c_ref(p),
-            //        Rvalue::Len(p) => self.c_len(p),
-            //        unimpl => todo!("{}", unimpl),
-            //    };
-            //    self.store(&l, rloc.clone());
-            //    self.free_if_temp(rloc);
-            //}
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{..} => todo!(),
             Statement::MkRef(dest, src) => todo!(),
