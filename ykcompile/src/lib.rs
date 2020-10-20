@@ -21,7 +21,7 @@ use std::ffi::CString;
 use std::fmt::{self, Display, Formatter};
 use std::mem;
 use std::process::Command;
-use ykpack::{SignedIntTy, Ty, TypeId, UnsignedIntTy};
+use ykpack::{SignedIntTy, Ty, TypeId, UnsignedIntTy, IPlace};
 use yktrace::tir::{
     BinOp, CallOperand, Constant, ConstantInt, Guard, Local, Operand, Place, Projection, Rvalue,
     Statement, TirOp, TirTrace,
@@ -37,8 +37,7 @@ lazy_static! {
 
     // Register partitioning. These arrays must not overlap.
     // FIXME add callee save registers to the pool. Trace code will need to save/restore them.
-    //static ref TEMP_REGS: [u8; 3] = [R9.code(), R10.code(), R11.code()];
-    static ref TMP_REG: u8 = R11.code(); // Used for memory to memory moves.
+    static ref TEMP_REG: u8 = R11.code();
     static ref LOCAL_REGS: [u8; 5] = [R10.code(), R9.code(), R8.code(), RDX.code(), RCX.code()];
 }
 
@@ -120,8 +119,9 @@ pub enum Location {
     Register(u8),
     /// A statically known memory location relative to a register.
     Mem(RegAndOffset),
-    /// A runtime memory location stored in a register.
-    Addr(u8),
+    // A runtime memory location stored in a register.
+    //Addr(u8),
+    Const(Constant, TypeId),
     /// A non-live location. Used by the register allocator.
     NotLive,
 }
@@ -231,6 +231,35 @@ impl<TT> TraceCompiler<TT> {
     //        (self.local_to_location(p.local), ty)
     //    }
     //}
+
+    fn iplace_to_location(&mut self, ip: &IPlace) -> Location {
+        //if self.can_live_in_register(p.ty) {
+        //} else {
+        //}
+        match ip {
+            IPlace::Val{local, offs, ty} => {
+                let mut loc = self.local_to_location(*local);
+
+                if *offs != 0 {
+                    match &mut loc {
+                        Location::Register(..) => {
+                            // FIXME make it so that the "something" is allocated on the stack.
+                            // Can we do this statically in the compiler?
+                            todo!("offsetting something in a register");
+                        },
+                        Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
+                        Location::Const(..) => todo!("offsetting a constant"),
+                        Location::Const(..) => todo!("offsetting a constant"),
+                        Location::NotLive => unreachable!(),
+                    }
+                }
+                loc
+            },
+            IPlace::Const{val, ty} => Location::Const(val.clone(), *ty),
+            _ => todo!(),
+        }
+        //let base_loc = self.local_to_location
+    }
 
     ///// Takes a `Place`, resolves all projections, and returns a `Location` containing the result.
     //fn resolve_projection(&mut self, p: &Place, store: bool) -> (Location, Ty) {
@@ -424,7 +453,8 @@ impl<TT> TraceCompiler<TT> {
     /// performs one.
     fn local_to_location(&mut self, l: Local) -> Location {
         if l == INTERP_STEP_ARG {
-            Location::Register(RDI.code()) // i.e. the first arg register.
+            // The argument is a mutable reference in RDI.
+            Location::Mem(RegAndOffset{reg: RDI.code(), offs: 0})
         } else if let Some(location) = self.variable_location_map.get(&l) {
             // We already have a location for this local.
             location.clone()
@@ -492,13 +522,14 @@ impl<TT> TraceCompiler<TT> {
     /// Notifies the register allocator that the register allocated to `local` may now be re-used.
     fn free_register(&mut self, local: &Local) -> Result<(), CompileError> {
         match self.variable_location_map.get(local) {
-            Some(Location::Register(reg)) | Some(Location::Addr(reg)) => {
+            Some(Location::Register(reg)) => { //| Some(Location::Addr(reg)) => {
                 //debug_assert!(!is_temp_reg(*reg));
                 // If this local is currently stored in a register, free it.
                 self.register_content_map.insert(*reg, RegAlloc::Free);
             }
             Some(Location::Mem { .. }) => {}
             Some(Location::NotLive) => unreachable!(),
+            Some(Location::Const(..)) => unreachable!(),
             None => unreachable!("freeing unallocated register"),
         }
         self.variable_location_map.insert(*local, Location::NotLive);
@@ -929,7 +960,7 @@ impl<TT> TraceCompiler<TT> {
             //    self.store(&l, rloc.clone());
             //    self.free_if_temp(rloc);
             //}
-            Statement::IStore(dest, src) => todo!(),
+            Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{..} => todo!(),
             Statement::MkRef(dest, src) => todo!(),
             Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
@@ -944,179 +975,207 @@ impl<TT> TraceCompiler<TT> {
         Ok(())
     }
 
-    ///// Store the value in `src_loc` into `dest_plc`.
-    //fn store(&mut self, dest_plc: &Place, src_loc: Location) {
-    //    let (dest_loc, ty) = self.place_to_location(dest_plc, true);
-    //    match (&dest_loc, &src_loc) {
-    //        (Location::Addr(dest_reg), Location::Register(src_reg)) => {
-    //            // If the lhs is a projection that results in a memory address (e.g.
-    //            // `(*$1).0`), then the value in `dest_reg` is a pointer to store into.
-    //            match ty.size() {
-    //                0 => (), // ZST.
-    //                1 => {
-    //                    dynasm!(self.asm
-    //                        ; mov [Rq(dest_reg)], Rb(src_reg)
-    //                    );
-    //                }
-    //                2 => {
-    //                    dynasm!(self.asm
-    //                        ; mov [Rq(dest_reg)], Rw(src_reg)
-    //                    );
-    //                }
-    //                4 => {
-    //                    dynasm!(self.asm
-    //                        ; mov [Rq(dest_reg)], Rd(src_reg)
-    //                    );
-    //                }
-    //                8 => {
-    //                    dynasm!(self.asm
-    //                        ; mov [Rq(dest_reg)], Rq(src_reg)
-    //                    );
-    //                }
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //        (Location::Register(dest_reg), Location::Register(src_reg)) => {
-    //            dynasm!(self.asm
-    //                ; mov Rq(dest_reg), Rq(src_reg)
-    //            );
-    //        }
-    //        (Location::Mem(dest_ro), Location::Register(src_reg)) => {
-    //            match ty.size() {
-    //                0 => (), // ZST.
-    //                1 => {
-    //                    dynasm!(self.asm
-    //                        ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(src_reg)
-    //                    );
-    //                }
-    //                2 => {
-    //                    dynasm!(self.asm
-    //                        ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(src_reg)
-    //                    );
-    //                }
-    //                4 => {
-    //                    dynasm!(self.asm
-    //                        ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(src_reg)
-    //                    );
-    //                }
-    //                8 => {
-    //                    dynasm!(self.asm
-    //                        ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(src_reg)
-    //                    );
-    //                }
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //        (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
-    //            if ty.size() <= 8 {
-    //                let temp = self.create_temporary();
-    //                match ty.size() {
-    //                    0 => (), // ZST.
-    //                    1 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(temp)
-    //                        );
-    //                    }
-    //                    2 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(temp)
-    //                        );
-    //                    }
-    //                    4 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(temp)
-    //                        );
-    //                    }
-    //                    8 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(temp)
-    //                        );
-    //                    }
-    //                    _ => unreachable!(),
-    //                }
-    //                //self.free_if_temp(Location::Register(temp));
-    //            } else {
-    //                self.copy_memory(dest_ro, src_ro, ty.size());
-    //            }
-    //        }
-    //        //(Location::Register(dest_reg, dest_is_ptr), Location::Mem(src_ro)) => {
-    //        (Location::Addr(dest_reg), Location::Mem(src_ro)) => {
-    //            if ty.size() <= 8 {
-    //                let temp = self.create_temporary();
-    //                match ty.size() {
-    //                    0 => (), // ZST.
-    //                    1 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov BYTE [Rq(dest_reg)], Rb(temp)
-    //                        );
-    //                    }
-    //                    2 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov WORD [Rq(dest_reg)], Rw(temp)
-    //                        );
-    //                    }
-    //                    4 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov DWORD [Rq(dest_reg)], Rd(temp)
-    //                        );
-    //                    }
-    //                    8 => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                            ; mov QWORD [Rq(dest_reg)], Rq(temp)
-    //                        );
-    //                    }
-    //                    _ => unreachable!(),
-    //                }
-    //                //self.free_if_temp(Location::Register(temp));
-    //            } else {
-    //                self.copy_memory(
-    //                    &RegAndOffset {
-    //                        reg: *dest_reg,
-    //                        offs: 0,
-    //                    },
-    //                    src_ro,
-    //                    ty.size(),
-    //                );
-    //            }
-    //        }
-    //        (Location::Register(dest_reg), Location::Mem(src_ro)) => {
-    //            match ty.size() {
-    //                0 => (), // ZST.
-    //                1 => {
-    //                    dynasm!(self.asm
-    //                        ; mov Rb(dest_reg), BYTE [Rq(src_ro.reg) + src_ro.offs]
-    //                    );
-    //                }
-    //                2 => {
-    //                    dynasm!(self.asm
-    //                        ; mov Rw(dest_reg), WORD [Rq(src_ro.reg) + src_ro.offs]
-    //                    );
-    //                }
-    //                4 => {
-    //                    dynasm!(self.asm
-    //                        ; mov Rd(dest_reg), DWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                    );
-    //                }
-    //                8 => {
-    //                    dynasm!(self.asm
-    //                        ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
-    //                    );
-    //                }
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //        _ => unreachable!(),
-    //    }
-    //    //self.free_if_temp(dest_loc);
-    //}
+    fn c_istore(&mut self, dest: &IPlace, src: &IPlace) {
+        self.store(dest, src);
+    }
+
+    /// Store the value in `src_loc` into `dest_loc`.
+    fn store(&mut self, dest_ip: &IPlace, src_ip: &IPlace) {
+        let dest_loc = self.iplace_to_location(dest_ip);
+        let src_loc = self.iplace_to_location(src_ip);
+        let ty = SIR.ty(&dest_ip.ty());
+
+        match (&dest_loc, &src_loc) {
+            // (Location::Addr(dest_reg), Location::Register(src_reg)) => {
+            //     // If the lhs is a projection that results in a memory address (e.g.
+            //     // `(*$1).0`), then the value in `dest_reg` is a pointer to store into.
+            //     match ty.size() {
+            //         0 => (), // ZST.
+            //         1 => {
+            //             dynasm!(self.asm
+            //                 ; mov [Rq(dest_reg)], Rb(src_reg)
+            //             );
+            //         }
+            //         2 => {
+            //             dynasm!(self.asm
+            //                 ; mov [Rq(dest_reg)], Rw(src_reg)
+            //             );
+            //         }
+            //         4 => {
+            //             dynasm!(self.asm
+            //                 ; mov [Rq(dest_reg)], Rd(src_reg)
+            //             );
+            //         }
+            //         8 => {
+            //             dynasm!(self.asm
+            //                 ; mov [Rq(dest_reg)], Rq(src_reg)
+            //             );
+            //         }
+            //         _ => unreachable!(),
+            //     }
+            // }
+            (Location::Register(dest_reg), Location::Register(src_reg)) => {
+                dynasm!(self.asm
+                    ; mov Rq(dest_reg), Rq(src_reg)
+                );
+            }
+            (Location::Mem(dest_ro), Location::Register(src_reg)) => {
+                match ty.size() {
+                    0 => (), // ZST.
+                    1 => {
+                        dynasm!(self.asm
+                            ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(src_reg)
+                        );
+                    }
+                    2 => {
+                        dynasm!(self.asm
+                            ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(src_reg)
+                        );
+                    }
+                    4 => {
+                        dynasm!(self.asm
+                            ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(src_reg)
+                        );
+                    }
+                    8 => {
+                        dynasm!(self.asm
+                            ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(src_reg)
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
+                if ty.size() <= 8 {
+                    match ty.size() {
+                        0 => (), // ZST.
+                        1 => {
+                            dynasm!(self.asm
+                                ; mov Rb(*TEMP_REG), BYTE [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(*TEMP_REG)
+                            );
+                        }
+                        2 => {
+                            dynasm!(self.asm
+                                ; mov Rw(*TEMP_REG), WORD [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(*TEMP_REG)
+                            );
+                        }
+                        4 => {
+                            dynasm!(self.asm
+                                ; mov Rd(*TEMP_REG), DWORD [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(*TEMP_REG)
+                            );
+                        }
+                        8 => {
+                            dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                    //self.free_if_temp(Location::Register(temp));
+                } else {
+                    self.copy_memory(dest_ro, src_ro, ty.size());
+                }
+            }
+            //(Location::Register(dest_reg, dest_is_ptr), Location::Mem(src_ro)) => {
+            // (Location::Addr(dest_reg), Location::Mem(src_ro)) => {
+            //     if ty.size() <= 8 {
+            //         let temp = self.create_temporary();
+            //         match ty.size() {
+            //             0 => (), // ZST.
+            //             1 => {
+            //                 dynasm!(self.asm
+            //                     ; mov Rb(temp), BYTE [Rq(src_ro.reg) + src_ro.offs]
+            //                     ; mov BYTE [Rq(dest_reg)], Rb(temp)
+            //                 );
+            //             }
+            //             2 => {
+            //                 dynasm!(self.asm
+            //                     ; mov Rw(temp), WORD [Rq(src_ro.reg) + src_ro.offs]
+            //                     ; mov WORD [Rq(dest_reg)], Rw(temp)
+            //                 );
+            //             }
+            //             4 => {
+            //                 dynasm!(self.asm
+            //                     ; mov Rd(temp), DWORD [Rq(src_ro.reg) + src_ro.offs]
+            //                     ; mov DWORD [Rq(dest_reg)], Rd(temp)
+            //                 );
+            //             }
+            //             8 => {
+            //                 dynasm!(self.asm
+            //                     ; mov Rq(temp), QWORD [Rq(src_ro.reg) + src_ro.offs]
+            //                     ; mov QWORD [Rq(dest_reg)], Rq(temp)
+            //                 );
+            //             }
+            //             _ => unreachable!(),
+            //         }
+            //         //self.free_if_temp(Location::Register(temp));
+            //     } else {
+            //         self.copy_memory(
+            //             &RegAndOffset {
+            //                 reg: *dest_reg,
+            //                 offs: 0,
+            //             },
+            //             src_ro,
+            //             ty.size(),
+            //         );
+            //     }
+            // }
+            (Location::Register(dest_reg), Location::Mem(src_ro)) => {
+                match ty.size() {
+                    0 => (), // ZST.
+                    1 => {
+                        dynasm!(self.asm
+                            ; mov Rb(dest_reg), BYTE [Rq(src_ro.reg) + src_ro.offs]
+                        );
+                    }
+                    2 => {
+                        dynasm!(self.asm
+                            ; mov Rw(dest_reg), WORD [Rq(src_ro.reg) + src_ro.offs]
+                        );
+                    }
+                    4 => {
+                        dynasm!(self.asm
+                            ; mov Rd(dest_reg), DWORD [Rq(src_ro.reg) + src_ro.offs]
+                        );
+                    }
+                    8 => {
+                        dynasm!(self.asm
+                            ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            (Location::Register(dest_reg), Location::Const(c_val, _)) => {
+                let i64_c = c_val.i64_cast();
+                if ty.size() > 0 {
+                    if i64_c < i32::MAX as i64 {
+                        let i32_c = i32::try_from(c_val.i64_cast()).unwrap();
+                        dynasm!(self.asm
+                            ; mov Rq(dest_reg), i64_c as i32
+                        );
+                    } else {
+                        // Can't move 64-bit constants in x86_64.
+                        let i64_c = c_val.i64_cast();
+                        let hi_word = (i64_c >> 32) as i32;
+                        let lo_word = (i64_c & 0xffffffff) as i32;
+                        dynasm!(self.asm
+                            ; mov Rq(dest_reg), hi_word
+                            ; shl Rq(dest_reg), 32
+                            ; or Rq(dest_reg), lo_word
+                        );
+                    }
+                }
+            },
+            (Location::Mem(dest_reg), Location::Const(c_val, _)) => todo!(),
+            _ => unreachable!(),
+        }
+        //self.free_if_temp(dest_loc);
+    }
 
     /// Compile a guard in the trace, emitting code to abort execution in case the guard fails.
     fn c_guard(&mut self, _grd: &Guard) {
@@ -1761,73 +1820,56 @@ mod tests {
         assert_eq!(inputs.0, args.0);
     }
 
-    #[inline(never)]
-    fn add(a: u8) -> u8 {
-        let x = a + 3; // x = a; add x, 3
-        let y = a + x;
-        y
-    }
-
-    fn add64(a: u64) -> u64 {
-        let x = a + 8589934592;
-        x
-    }
-
     #[test]
-    fn test_binop_add() {
-        struct IO(u8, u64, u8, u8);
+    fn test_binop_add_simple() {
+        #[derive(Eq, PartialEq, Debug)]
+        struct IO(u64, u64, u64);
 
         #[interp_step]
-        fn interp_step(io: &mut IO) {
-            io.0 = add(13);
-            io.1 = add64(1);
-            io.2 = io.0 + 2;
-            io.3 = io.0 + io.0;
+        fn interp_stepx(io: &mut IO) {
+            io.2 = io.0 + io.1 + 3;
         }
 
-        let mut inputs = IO(0, 0, 0, 0);
+        let mut inputs = IO(5, 2, 0);
         let th = start_tracing(TracingKind::HardwareTracing);
-        interp_step(&mut inputs);
+        interp_stepx(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
         let ct = TraceCompiler::<IO>::compile(tir_trace);
-        let mut args = IO(0, 0, 0, 0);
+        let mut args = IO(5, 2, 0);
         ct.execute(&mut args);
-        assert_eq!(args.0, 29);
-        assert_eq!(args.1, 8589934593);
-        assert_eq!(args.2, 31);
-        assert_eq!(args.3, 58);
+        assert_eq!(args, IO(5, 2, 10));
     }
 
     // Similar test to the above, but makes sure the operations will be executed on the stack by
     // filling up all registers first.
-    #[test]
-    fn test_binop_add_stack() {
-        struct IO(u8, u64);
+    //#[test]
+    //fn test_binop_add_stack() {
+    //    struct IO(u8, u64);
 
-        #[interp_step]
-        fn interp_step(io: &mut IO) {
-            let _a = 1;
-            let _b = 2;
-            let _c = 3;
-            let _d = 4;
-            let _e = 5;
-            let _d = 6;
-            io.0 = add(13);
-            io.1 = add64(1);
-        }
+    //    #[interp_step]
+    //    fn interp_step(io: &mut IO) {
+    //        let _a = 1;
+    //        let _b = 2;
+    //        let _c = 3;
+    //        let _d = 4;
+    //        let _e = 5;
+    //        let _d = 6;
+    //        io.0 = add(13);
+    //        io.1 = add64(1);
+    //    }
 
-        let mut inputs = IO(0, 0);
-        let th = start_tracing(TracingKind::HardwareTracing);
-        interp_step(&mut inputs);
-        let sir_trace = th.stop_tracing().unwrap();
-        let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-        let ct = TraceCompiler::<IO>::compile(tir_trace);
-        let mut args = IO(0, 0);
-        ct.execute(&mut args);
-        assert_eq!(args.0, 29);
-        assert_eq!(args.1, 8589934593);
-    }
+    //    let mut inputs = IO(0, 0);
+    //    let th = start_tracing(TracingKind::HardwareTracing);
+    //    interp_step(&mut inputs);
+    //    let sir_trace = th.stop_tracing().unwrap();
+    //    let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+    //    let ct = TraceCompiler::<IO>::compile(tir_trace);
+    //    let mut args = IO(0, 0);
+    //    ct.execute(&mut args);
+    //    assert_eq!(args.0, 29);
+    //    assert_eq!(args.1, 8589934593);
+    //}
 
     #[test]
     fn field_projection_tir() {

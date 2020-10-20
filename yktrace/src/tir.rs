@@ -47,46 +47,42 @@ impl<'a> TirTrace<'a> {
         // variables. No local should be used without first being defined. If that happens it's
         // likely that the user used a variable from outside the scope of the trace without
         // introducing it via `trace_locals()`.
-        //let mut defined_locals: HashSet<Local> = HashSet::new();
-        //let mut def_sites: HashMap<Local, usize> = HashMap::new();
+        let mut defined_locals: HashSet<Local> = HashSet::new();
+        let mut def_sites: HashMap<Local, usize> = HashMap::new();
         let mut last_use_sites = HashMap::new();
 
         // Ensure the argument to the `interp_step` function is defined by the first statement.
         // The arg is always at local index 1.
-        //defined_locals.insert(INTERP_STEP_ARG);
-        //def_sites.insert(INTERP_STEP_ARG, 0);
+        defined_locals.insert(INTERP_STEP_ARG);
+        def_sites.insert(INTERP_STEP_ARG, 0);
 
         let mut update_defined_locals = |op: &Statement, op_idx: usize| {
             // Locals reported by `maybe_defined_locals()` are only defined if they are not already
             // defined.
-            //
-            // FIXME: Note that we are unable to detect variables which are defined outside of the
-            // traced code and which are not introduced as trace inputs. The user should not do
-            // this, but it would be nice to detect that somehow and panic.
-            //let newly_defined = op
-            //    .maybe_defined_locals()
-            //    .iter()
-            //    .filter_map(|l| {
-            //        if !defined_locals.contains(l) {
-            //            Some(*l)
-            //        } else {
-            //            None
-            //        }
-            //    })
-            //    .collect::<Vec<Local>>();
-            //defined_locals.extend(&newly_defined);
-            //for d in newly_defined {
-            //    def_sites.insert(d, op_idx);
-            //}
+            let newly_defined = op
+                .maybe_defined_locals()
+                .iter()
+                .filter_map(|l| {
+                    if !defined_locals.contains(l) {
+                        Some(*l)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<Local>>();
+            defined_locals.extend(&newly_defined);
+            for d in newly_defined {
+                def_sites.insert(d, op_idx);
+            }
 
             for lcl in op.used_locals() {
                 // The trace inputs local is regarded as being live for the whole trace.
                 if lcl == INTERP_STEP_ARG {
                     continue;
                 }
-                //if !defined_locals.contains(&lcl) {
-                //    panic!("undefined local: {}", lcl);
-                //}
+                if !defined_locals.contains(&lcl) {
+                    panic!("undefined local: {}", lcl);
+                }
                 last_use_sites.insert(lcl, op_idx);
             }
         };
@@ -137,6 +133,7 @@ impl<'a> TirTrace<'a> {
                 // function `bar` is inlined into a function `foo`, and `foo` used 5 variables, then
                 // all variables in `bar` are offset by 5.
                 for stmt in body.blocks[user_bb_idx_usize].stmts.iter() {
+                    println!("stmt: {}", stmt);
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
@@ -159,8 +156,12 @@ impl<'a> TirTrace<'a> {
                         }
                     };
 
-                    update_defined_locals(&op, ops.len());
-                    ops.push(TirOp::Statement(op));
+                    // FIXME: Ignore writing to the return value in the outer interp_step function,
+                    // as we know it returns unit and we can't yet lower constant tuple types.
+                    if body.flags & ykpack::bodyflags::INTERP_STEP != 0 && !op.maybe_defined_locals().contains(&Local(0)) {
+                        update_defined_locals(&op, ops.len());
+                        ops.push(TirOp::Statement(op));
+                    }
                 }
             }
 
@@ -349,6 +350,7 @@ impl<'a> TirTrace<'a> {
             //}
         }
 
+        dbg!(&local_decls);
         Ok(Self {
             ops,
             local_decls,
@@ -533,18 +535,13 @@ impl VarRenamer {
     //}
 
     fn rename_local(&mut self, local: &Local, body: &ykpack::Body) -> Local {
-        //let renamed = if local.0 == 0 {
-        //    self.returns.last().expect("expected a return local")
-        //} else {
-            Local(local.0 + self.offset)
-        //};
+        let renamed = Local(local.0 + self.offset);
+        self.local_decls.insert(
+            renamed.clone(),
+            body.local_decls[usize::try_from(local.0).unwrap()].clone()
+        );
 
-        //self.local_decls.insert(
-        //    renamed.clone(),
-        //    body.local_decls[usize::try_from(local.0).unwrap()].clone()
-        //);
-
-        //renamed
+        renamed
     }
 }
 
@@ -629,15 +626,14 @@ impl fmt::Display for TirOp {
 }
 
 impl TirOp {
-    // Returns true if the operation may affect locals besides those appearing in the operation.
-    //fn may_have_side_effects(&self) -> bool {
-    //    todo!();
-    //    //if let TirOp::Statement(s) = self {
-    //    //    s.may_have_side_effects()
-    //    //} else {
-    //    //    false
-    //    //}
-    //}
+    /// Returns true if the operation may affect locals besides those appearing in the operation.
+    fn may_have_side_effects(&self) -> bool {
+        if let TirOp::Statement(s) = self {
+            s.may_have_side_effects()
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]

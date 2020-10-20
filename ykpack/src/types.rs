@@ -498,11 +498,19 @@ impl Display for IPlace {
 }
 
 impl IPlace {
-    fn push_used_locals(&self, v: &mut Vec<Local>) {
+    fn local(&self) -> Option<Local> {
         match self {
-            Self::Val{local, ..} => v.push(*local),
-            Self::Const{..} => (),
-            Self::Unimplemented(_) => (),
+            Self::Val{local, ..} => Some(*local),
+            Self::Const{..} => None,
+            Self::Unimplemented(_) => None,
+        }
+    }
+
+    pub fn ty(&self) -> TypeId {
+        match self {
+            Self::Val{ty, ..} => *ty,
+            Self::Const{ty, ..} => *ty,
+            Self::Unimplemented(_) => unreachable!(),
         }
     }
 }
@@ -537,35 +545,44 @@ pub enum Statement {
 }
 
 impl Statement {
-    ///// Returns a vector of locals that this SIR statement *may* define.
-    ///// Whether or not the local is actually defined depends upon whether this is the first write
-    ///// into the local (there is no explicit liveness marker in SIR/TIR).
-    //pub fn maybe_defined_locals(&self) -> Vec<Local> {
-    //    let mut ret = Vec::new();
+    fn maybe_push_local(v: &mut Vec<Local>, l: Option<Local>) {
+        if let Some(l) = l {
+            v.push(l);
+        }
+    }
 
-    //    match self {
-    //        Statement::Nop => (),
-    //        Statement::Assign(place, _rval) => place.push_maybe_defined_locals(&mut ret),
-    //        Statement::Enter(_target, args, dest, start_idx) => {
-    //            if let Some(dest) = dest {
-    //                dest.push_maybe_defined_locals(&mut ret);
-    //            }
-    //            for idx in 0..args.len() {
-    //                // + 1 to skip return value.
-    //                ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-    //            }
-    //        }
-    //        Statement::Leave => (),
-    //        Statement::StorageDead(_) => (),
-    //        Statement::Call(_target, _args, dest) => {
-    //            if let Some(dest) = dest {
-    //                dest.push_maybe_defined_locals(&mut ret);
-    //            }
-    //        }
-    //        Statement::Unimplemented(_) => (),
-    //    }
-    //    ret
-    //}
+    /// Returns a vector of locals that this SIR statement *may* define.
+    /// Whether or not the local is actually defined depends upon whether this is the first write
+    /// into the local (there is no explicit liveness marker in SIR/TIR).
+    pub fn maybe_defined_locals(&self) -> Vec<Local> {
+        let mut ret = Vec::new();
+
+        match self {
+            Statement::Nop => (),
+            Statement::IStore(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
+            Statement::MkRef(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
+            Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
+            Statement::Enter(_target, args, dest, start_idx) => {
+                if let Some(dest) = dest {
+                    Self::maybe_push_local(&mut ret, dest.local());
+                }
+                for idx in 0..args.len() {
+                    // + 1 to skip return value.
+                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+                }
+            }
+            Statement::Leave => (),
+            Statement::StorageDead(_) => (),
+            Statement::Call(_target, _args, dest) => {
+                if let Some(dest) = dest {
+                    Self::maybe_push_local(&mut ret, dest.local());
+                }
+            }
+            Statement::Debug(_) => (),
+            Statement::Unimplemented(_) => (),
+        }
+        ret
+    }
 
     /// Returns a vector of locals that this SIR statement uses.
     /// A definition is considered a use, so this returns a superset of what
@@ -578,24 +595,24 @@ impl Statement {
             Statement::Nop => (),
             Statement::Debug(_) => (),
             Statement::MkRef(dest, src) => {
-                dest.push_used_locals(&mut ret);
-                src.push_used_locals(&mut ret);
+                Self::maybe_push_local(&mut ret, dest.local());
+                Self::maybe_push_local(&mut ret, src.local());
             }
             Statement::BinaryOp{dest, opnd1, opnd2, ..} => {
-                opnd1.push_used_locals(&mut ret);
-                opnd2.push_used_locals(&mut ret);
-                dest.push_used_locals(&mut ret);
+                Self::maybe_push_local(&mut ret, opnd1.local());
+                Self::maybe_push_local(&mut ret, opnd2.local());
+                Self::maybe_push_local(&mut ret, dest.local());
             }
-            Statement::IStore(ip1, ip2) => {
-                ip1.push_used_locals(&mut ret);
-                ip2.push_used_locals(&mut ret);
+            Statement::IStore(dest, src) => {
+                Self::maybe_push_local(&mut ret, dest.local());
+                Self::maybe_push_local(&mut ret, src.local());
             }
             Statement::Enter(_target, args, dest, start_idx) => {
                 if let Some(dest) = dest {
-                    dest.push_used_locals(&mut ret);
+                    Self::maybe_push_local(&mut ret, dest.local());
                 }
                 for a in args {
-                    a.push_used_locals(&mut ret);
+                    Self::maybe_push_local(&mut ret, a.local());
                 }
                 for idx in 0..args.len() {
                     // + 1 to skip return value.
@@ -606,10 +623,10 @@ impl Statement {
             Statement::StorageDead(_) => (),
             Statement::Call(_target, args, dest) => {
                 if let Some(dest) = dest {
-                    dest.push_used_locals(&mut ret);
+                    Self::maybe_push_local(&mut ret, dest.local());
                 }
                 for a in args {
-                    a.push_used_locals(&mut ret);
+                    Self::maybe_push_local(&mut ret, a.local());
                 }
             }
             Statement::Unimplemented(_) => (),
@@ -618,12 +635,12 @@ impl Statement {
     }
 
     ///// Returns true if the statement may affect locals besides those appearing in the statement.
-    //pub fn may_have_side_effects(&self) -> bool {
-    //    match self {
-    //        Statement::Call(..) | Statement::Enter(..) => true,
-    //        _ => false,
-    //    }
-    //}
+    pub fn may_have_side_effects(&self) -> bool {
+        match self {
+            Statement::Call(..) | Statement::Enter(..) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for Statement {
