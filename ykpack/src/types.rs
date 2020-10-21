@@ -469,8 +469,8 @@ impl Display for BasicBlock {
 pub enum IPlace {
     /// The IPlace describes a value as a Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
-    // The IPlace describes a value which itself is a reference.
-    //Ref{local: Local, offs: u32, ty: TypeId},
+    // A dereferenced IPlace. When we store to this, we have to go through a pointer.
+    Deref{local: Local, offs: u32, ty: TypeId},
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
@@ -487,13 +487,13 @@ impl Display for IPlace {
                     write!(f, "{}", local)
                 }
             },
-            //Self::Ref{local, offs, ty: _ty} => {
-            //    if *offs != 0 {
-            //        write!(f, "$r{}+{}", local.0, offs)
-            //    } else {
-            //        write!(f, "$r{}", local.0)
-            //    }
-            //},
+            Self::Deref{local, offs, ty: _ty} => {
+                if *offs != 0 {
+                    write!(f, "*(${}+{})", local.0, offs)
+                } else {
+                    write!(f, "*(${})", local.0)
+                }
+            },
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
@@ -503,7 +503,7 @@ impl Display for IPlace {
 impl IPlace {
     pub fn local(&self) -> Option<Local> {
         match self {
-            Self::Val{local, ..} => Some(*local),
+            Self::Val{local, ..} | Self::Deref{local, ..} => Some(*local),
             Self::Const{..} => None,
             Self::Unimplemented(_) => None,
         }
@@ -511,8 +511,16 @@ impl IPlace {
 
     pub fn ty(&self) -> TypeId {
         match self {
-            Self::Val{ty, ..} => *ty,
+            Self::Val{ty, ..} | Self::Deref{ty, ..} => *ty,
             Self::Const{ty, ..} => *ty,
+            Self::Unimplemented(_) => unreachable!(),
+        }
+    }
+
+    pub fn deref(&self) -> IPlace {
+        match self {
+            Self::Val{local, offs, ty} | Self::Deref{local, offs, ty} => IPlace::Deref{local: *local, offs: *offs, ty: *ty},
+            Self::Const{ty, ..} => todo!(),
             Self::Unimplemented(_) => unreachable!(),
         }
     }
@@ -522,8 +530,6 @@ impl IPlace {
 pub enum Statement {
     /// Do nothing.
     Nop,
-    // Assigns the local variable on the left to the `IPlace` on the right.
-    //ssign(Local, IPlace),
     /// Stores the content addressed by the right hand side into the left hand side.
     IStore(IPlace, IPlace),
     /// Binary operations. FIXME dest should be a local?
@@ -532,6 +538,8 @@ pub enum Statement {
     Enter(CallOperand, Vec<IPlace>, Option<IPlace>, u32),
     /// Makes a reference.
     MkRef(IPlace, IPlace),
+    // Dereferences a reference.
+    //Deref(IPlace, IPlace),
     /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
     Leave,
     /// Marks a local variable dead.
@@ -564,6 +572,7 @@ impl Statement {
             Statement::Nop => (),
             Statement::IStore(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::MkRef(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
+            //Statement::Deref(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::Enter(_target, args, dest, start_idx) => {
                 if let Some(dest) = dest {
@@ -597,7 +606,7 @@ impl Statement {
         match self {
             Statement::Nop => (),
             Statement::Debug(_) => (),
-            Statement::MkRef(dest, src) => {
+            Statement::MkRef(dest, src) => { //| Statement::Deref(dest, src) => {
                 Self::maybe_push_local(&mut ret, dest.local());
                 Self::maybe_push_local(&mut ret, src.local());
             }
@@ -650,8 +659,8 @@ impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Statement::Nop => write!(f, "nop"),
-            //Statement::Assign(l, r) => write!(f, "{} = {}", l, r),
-            Statement::MkRef(l, r) => write!(f, "{} = &{}", l, r),
+            Statement::MkRef(l, r) => write!(f, "{} = &({})", l, r),
+            //Statement::Deref(l, r) => write!(f, "{} = *({})", l, r),
             Statement::IStore(l, r) => write!(f, "{} = {}", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
                 let c = if *checked { " (checked)" } else { "" };

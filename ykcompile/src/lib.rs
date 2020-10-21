@@ -120,8 +120,9 @@ pub enum Location {
     Register(u8),
     /// A statically known memory location relative to a register.
     Mem(RegAndOffset),
-    // A runtime memory location stored in a register.
-    //Addr(u8),
+    // Location that contains a pointer to some underlying storage.
+    //Addr(Box<Location>),
+    /// A statically known constant.
     Const(Constant, TypeId),
     /// A non-live location. Used by the register allocator.
     NotLive,
@@ -252,7 +253,7 @@ impl<TT> TraceCompiler<TT> {
         //} else {
         //}
         match ip {
-            IPlace::Val{local, offs, ty} => {
+            IPlace::Val{local, offs, ty} => { // | IPlace::Deref{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
 
                 if *offs != 0 {
@@ -1025,6 +1026,7 @@ impl<TT> TraceCompiler<TT> {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
+            //Statement::Deref(dest, src) => todo!(), //self.c_deref(dest, src),
             Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
