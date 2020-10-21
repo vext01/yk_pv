@@ -38,6 +38,7 @@ lazy_static! {
     // Register partitioning. These arrays must not overlap.
     // FIXME add callee save registers to the pool. Trace code will need to save/restore them.
     static ref TEMP_REG: u8 = R11.code();
+    static ref TEMP_LOC: Location = Location::Register(*TEMP_REG);
     static ref LOCAL_REGS: [u8; 5] = [R10.code(), R9.code(), R8.code(), RDX.code(), RCX.code()];
 }
 
@@ -134,6 +135,15 @@ impl Location {
 
     /// If `self` is a `Mem` then unwrap it, otherwise panic.
     fn unwrap_mem(&self) -> &RegAndOffset {
+        if let Location::Mem(ro) = self {
+            ro
+        } else {
+            panic!("tried to unwrap a Mem location when it wasn't a Mem");
+        }
+    }
+
+    /// If `self` is a `Mem` then return a mutable reference to its innards, otherwise panic.
+    fn unwrap_mem_mut(&mut self) -> &mut RegAndOffset {
         if let Location::Mem(ro) = self {
             ro
         } else {
@@ -248,7 +258,6 @@ impl<TT> TraceCompiler<TT> {
                             todo!("offsetting something in a register");
                         },
                         Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
-                        Location::Const(..) => todo!("offsetting a constant"),
                         Location::Const(..) => todo!("offsetting a constant"),
                         Location::NotLive => unreachable!(),
                     }
@@ -932,11 +941,84 @@ impl<TT> TraceCompiler<TT> {
         }
     }
 
+    /// Load an IPlace into the temporary register. Panic if it doesn't fit.
+    fn load_temp_reg(&mut self, ip: &IPlace) {
+        let loc = self.iplace_to_location(ip);
+        match loc {
+            Location::Register(r) => {
+                dynasm!(self.asm
+                    ; mov Rq(*TEMP_REG), Rq(r)
+                );
+            },
+            Location::Mem(ro) => {
+                match SIR.ty(&ip.ty()).size() {
+                    1 | 2 | 4 => todo!(),
+                    8 => {
+                        dynasm!(self.asm
+                            ; mov Rb(*TEMP_REG), BYTE [Rq(ro.reg) + ro.offs]
+                        );
+                    }
+                    _ => unreachable!("doesn't fit"),
+                }
+            },
+            Location::Const(..) => todo!(), // FIXME pull code from store() and put in a func?
+            Location::NotLive => unreachable!(),
+        }
+    }
+
+    fn c_binop(&mut self, dest: &IPlace, op: BinOp, opnd1: &IPlace, opnd2: &IPlace, checked: bool) {
+        dbg!(opnd1, opnd2);
+
+        // FIXME result not yet checked.
+        if op != BinOp::Add {
+            todo!();
+        }
+
+        // We do this in three stages.
+        // 1) Copy the first operand into the temp register.
+        self.load_temp_reg(opnd1);
+
+        // 2) Add the second operand.
+        let src_loc = self.iplace_to_location(opnd2);
+        let size = SIR.ty(&opnd1.ty()).size();
+        match src_loc {
+            Location::Register(r) => {
+                match size {
+                    1 | 2 | 4 => todo!(),
+                    8 => {
+                        dynasm!(self.asm
+                            ; add Rq(*TEMP_REG), Rq(r)
+                        );
+                    },
+                    _ => unreachable!(format!("{}", SIR.ty(&dest.ty()))),
+                }
+            },
+            Location::Mem(..) => todo!(),
+            Location::Const(..) => todo!(),
+            Location::NotLive => todo!(),
+        }
+
+        // 3) Move the result to where it is supposed to live.
+        // If it is a checked operation, then we have to build a (value, overflow?) tuple.
+        let mut dest_loc = self.iplace_to_location(dest);
+        self.store_raw(&dest_loc, &*TEMP_LOC, size);
+        if checked {
+            // Set overflow flag.
+            // FIXME assumes it doesn't overflow for now.
+            dynasm!(self.asm
+                ; mov Rq(*TEMP_REG), 0
+            );
+            let ro = dest_loc.unwrap_mem_mut();
+            ro.offs += i32::try_from(size).unwrap();
+            self.store_raw(&dest_loc, &*TEMP_LOC, 1);
+        }
+    }
+
     /// Compile a TIR statement.
     fn c_statement(&mut self, stmt: &Statement) -> Result<(), CompileError> {
         match stmt {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
-            Statement::BinaryOp{..} => todo!(),
+            Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => todo!(),
             Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
             Statement::Leave => {}
@@ -958,8 +1040,11 @@ impl<TT> TraceCompiler<TT> {
     fn store(&mut self, dest_ip: &IPlace, src_ip: &IPlace) {
         let dest_loc = self.iplace_to_location(dest_ip);
         let src_loc = self.iplace_to_location(src_ip);
-        let ty = SIR.ty(&dest_ip.ty());
+        self.store_raw(&dest_loc, &src_loc, SIR.ty(&dest_ip.ty()).size());
+    }
 
+    /// Stores src_loc into dest_loc.
+    fn store_raw(&mut self, dest_loc: &Location, src_loc: &Location, size: u64) {
         match (&dest_loc, &src_loc) {
             // (Location::Addr(dest_reg), Location::Register(src_reg)) => {
             //     // If the lhs is a projection that results in a memory address (e.g.
@@ -995,7 +1080,7 @@ impl<TT> TraceCompiler<TT> {
                 );
             }
             (Location::Mem(dest_ro), Location::Register(src_reg)) => {
-                match ty.size() {
+                match size {
                     0 => (), // ZST.
                     1 => {
                         dynasm!(self.asm
@@ -1021,8 +1106,8 @@ impl<TT> TraceCompiler<TT> {
                 }
             }
             (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
-                if ty.size() <= 8 {
-                    match ty.size() {
+                if size <= 8 {
+                    match size {
                         0 => (), // ZST.
                         1 => {
                             dynasm!(self.asm
@@ -1052,7 +1137,7 @@ impl<TT> TraceCompiler<TT> {
                     }
                     //self.free_if_temp(Location::Register(temp));
                 } else {
-                    self.copy_memory(dest_ro, src_ro, ty.size());
+                    self.copy_memory(dest_ro, src_ro, size);
                 }
             }
             //(Location::Register(dest_reg, dest_is_ptr), Location::Mem(src_ro)) => {
@@ -1100,7 +1185,7 @@ impl<TT> TraceCompiler<TT> {
             //     }
             // }
             (Location::Register(dest_reg), Location::Mem(src_ro)) => {
-                match ty.size() {
+                match size {
                     0 => (), // ZST.
                     1 => {
                         dynasm!(self.asm
@@ -1127,7 +1212,7 @@ impl<TT> TraceCompiler<TT> {
             }
             (Location::Register(dest_reg), Location::Const(c_val, _)) => {
                 let i64_c = c_val.i64_cast();
-                if ty.size() > 0 {
+                if size > 0 {
                     if i64_c < i32::MAX as i64 {
                         let i32_c = i32::try_from(c_val.i64_cast()).unwrap();
                         dynasm!(self.asm
@@ -1795,6 +1880,7 @@ mod tests {
         assert_eq!(inputs.0, args.0);
     }
 
+    /// FIXME: New IR binop adds the same operands for some reason.
     #[test]
     fn test_binop_add_simple() {
         #[derive(Eq, PartialEq, Debug)]
@@ -1810,6 +1896,7 @@ mod tests {
         interp_stepx(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(5, 2, 0);
         ct.execute(&mut args);
