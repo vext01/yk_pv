@@ -189,9 +189,14 @@ pub struct TraceCompiler<TT> {
 }
 
 impl<TT> TraceCompiler<TT> {
-    fn can_live_in_register(tyid: &TypeId) -> bool {
+    fn can_live_in_register(decl: &LocalDecl) -> bool {
+        if decl.referenced {
+            // We must allocate it on the stack so that we can reference it.
+            return false;
+        }
+
         // FIXME: optimisation: small structs and tuples etc. could actually live in a register.
-        let ty = SIR.ty(tyid);
+        let ty = SIR.ty(&decl.ty);
         match ty {
             Ty::UnsignedInt(ui) => match ui {
                 UnsignedIntTy::U128 => false,
@@ -468,8 +473,8 @@ impl<TT> TraceCompiler<TT> {
             // We already have a location for this local.
             location.clone()
         } else {
-            let tyid = self.local_decls[&l].ty;
-            if Self::can_live_in_register(&tyid) {
+            let decl = &self.local_decls[&l];
+            if Self::can_live_in_register(&decl) {
                 // Find a free register to store this local.
                 let loc = if let Some(reg) = self.get_free_register() {
                     self.register_content_map.insert(reg, RegAlloc::Local(l));
@@ -482,7 +487,7 @@ impl<TT> TraceCompiler<TT> {
                 self.variable_location_map.insert(l, loc);
                 ret
             } else {
-                let ty = SIR.ty(&tyid);
+                let ty = SIR.ty(&decl.ty);
                 let loc = self.stack_builder.alloc(ty.size(), ty.align());
                 self.variable_location_map.insert(l, loc.clone());
                 loc
@@ -1019,7 +1024,7 @@ impl<TT> TraceCompiler<TT> {
         match stmt {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
-            Statement::MkRef(dest, src) => todo!(),
+            Statement::MkRef(dest, src) => self.c_mkref(dest, src),
             Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
@@ -1030,6 +1035,26 @@ impl<TT> TraceCompiler<TT> {
         }
 
         Ok(())
+    }
+
+    fn c_mkref(&mut self, dest: &IPlace, src: &IPlace) {
+        let src_loc = self.iplace_to_location(src);
+        match src_loc {
+            Location::Register(..) => {
+                // This isn't possible as the allocator explicitely puts things which are
+                // referenced onto the stack and never in registers.
+                unreachable!()
+            },
+            Location::Mem(ro) => {
+                dynasm!(self.asm
+                    ; lea Rq(*TEMP_REG), [Rq(ro.reg) + ro.offs]
+                );
+            },
+            Location::Const(..) => todo!(),
+            Location::NotLive => unreachable!(),
+        }
+        let dest_loc = self.iplace_to_location(src);
+        self.store_raw(&dest_loc, &*TEMP_LOC, SIR.ty(&src.ty()).size());
     }
 
     fn c_istore(&mut self, dest: &IPlace, src: &IPlace) {
@@ -1231,7 +1256,37 @@ impl<TT> TraceCompiler<TT> {
                     }
                 }
             },
-            (Location::Mem(dest_reg), Location::Const(c_val, _)) => todo!(),
+            (Location::Mem(ro), Location::Const(c_val, ty)) => {
+                // FIXME this assumes the constant fits in 64 bits. We could have things like
+                // large constant tuples or u128 even.
+                let c_i64 = c_val.i64_cast();
+                match SIR.ty(&ty).size() {
+                    1 => {
+                        dynasm!(self.asm
+                            ; mov BYTE [Rq(ro.reg) + ro.offs], c_i64 as i8
+                        );
+                    },
+                    2 => {
+                        dynasm!(self.asm
+                            ; mov WORD [Rq(ro.reg) + ro.offs], c_i64 as i16
+                        );
+                    },
+                    4 => {
+                        dynasm!(self.asm
+                            ; mov DWORD [Rq(ro.reg) + ro.offs], c_i64 as i32
+                        );
+                    },
+                    8 => {
+                        let hi = c_i64 >> 32;
+                        let lo = c_i64 & 0xffffffff;
+                        dynasm!(self.asm
+                            ; mov QWORD [Rq(ro.reg) + ro.offs], lo as i32
+                            ; mov QWORD [Rq(ro.reg) + ro.offs + 4], hi as i32
+                        );
+                    },
+                    _ => todo!(),
+                }
+            }
             _ => unreachable!(),
         }
         //self.free_if_temp(dest_loc);
@@ -1989,7 +2044,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ref_deref() {
+    fn test_ref_deref_simple() {
         struct IO(u64);
 
         #[interp_step]
@@ -2006,6 +2061,7 @@ mod tests {
         interp_step(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);

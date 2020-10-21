@@ -396,6 +396,9 @@ pub mod bodyflags {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct LocalDecl {
     pub ty: TypeId,
+    /// If true this local variable is at some point referenced, and thus should be allocated on
+    /// the stack and never in a register.
+    pub referenced: bool,
 }
 
 impl Display for LocalDecl {
@@ -464,7 +467,7 @@ impl Display for BasicBlock {
 /// An IR place. This is used in SIR and TIR to describe the address of a piece of data.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum IPlace {
-    /// The IPlace describes a value as an Local+offset pair.
+    /// The IPlace describes a value as a Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
     // The IPlace describes a value which itself is a reference.
     //Ref{local: Local, offs: u32, ty: TypeId},
@@ -498,7 +501,7 @@ impl Display for IPlace {
 }
 
 impl IPlace {
-    fn local(&self) -> Option<Local> {
+    pub fn local(&self) -> Option<Local> {
         match self {
             Self::Val{local, ..} => Some(*local),
             Self::Const{..} => None,
@@ -1067,7 +1070,7 @@ impl Display for Terminator {
 }
 
 /// Binary operations.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum BinOp {
     Add,
     Sub,

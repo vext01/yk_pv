@@ -148,7 +148,7 @@ impl<'a> TirTrace<'a> {
                                 checked: *checked
                             },
                         Statement::Nop => stmt.clone(),
-                        Statement::Debug(_) => continue,
+                        Statement::Debug(_) => stmt.clone(),
                         Statement::Unimplemented(_) => stmt.clone(),
                         // The following statements kinds are specific to TIR and cannot appear in SIR.
                         Statement::Call(..) | Statement::Enter(..) | Statement::Leave => {
