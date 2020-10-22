@@ -520,9 +520,13 @@ impl IPlace {
     pub fn deref(&self) -> IPlace {
         match self {
             Self::Val{local, offs, ty} | Self::Deref{local, offs, ty} => IPlace::Deref{local: *local, offs: *offs, ty: *ty},
-            Self::Const{ty, ..} => todo!(),
+            Self::Const{..} => todo!(),
             Self::Unimplemented(_) => unreachable!(),
         }
+    }
+
+    pub fn is_deref(&self) -> bool {
+        matches!(self, Self::Deref{..})
     }
 }
 
