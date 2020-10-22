@@ -1003,8 +1003,6 @@ impl<TT> TraceCompiler<TT> {
     }
 
     fn c_binop(&mut self, dest: &IPlace, op: BinOp, opnd1: &IPlace, opnd2: &IPlace, checked: bool) {
-        dbg!(opnd1, opnd2);
-
         // FIXME result not yet checked.
         if op != BinOp::Add {
             todo!();
