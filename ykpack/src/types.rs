@@ -469,7 +469,7 @@ impl Display for BasicBlock {
 pub enum IPlace {
     /// The IPlace describes a value as a Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
-    // A dereferenced IPlace. When we store to this, we have to go through a pointer.
+    /// A dereferenced IPlace. When we store to this, we have to go through a pointer.
     Deref{local: Local, offs: u32, ty: TypeId},
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},

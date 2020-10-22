@@ -253,9 +253,10 @@ impl<TT> TraceCompiler<TT> {
         //} else {
         //}
         match ip {
-            IPlace::Val{local, offs, ty} => { // | IPlace::Deref{local, offs, ty} => {
+            IPlace::Val{local, offs, ty} | IPlace::Deref{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
 
+                // FIXME make a method on location.
                 if *offs != 0 {
                     match &mut loc {
                         Location::Register(..) => {
@@ -268,7 +269,26 @@ impl<TT> TraceCompiler<TT> {
                         Location::NotLive => unreachable!(),
                     }
                 }
-                loc
+            },
+            IPlace::Deref{local, offs, ty} => {
+                let mut loc = self.local_to_location(*local);
+
+                // FIXME make a method on location.
+                if *offs != 0 {
+                    match &mut loc {
+                        Location::Register(..) => {
+                            // FIXME make it so that the "something" is allocated on the stack.
+                            // Can we do this statically in the compiler?
+                            todo!("offsetting something in a register");
+                        },
+                        Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
+                        Location::Const(..) => todo!("offsetting a constant"),
+                        Location::NotLive => unreachable!(),
+                    }
+                }
+
+                match 
+                Location::Indirect
             },
             IPlace::Const{val, ty} => Location::Const(val.clone(), *ty),
             _ => todo!(),
