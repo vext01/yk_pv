@@ -255,7 +255,7 @@ impl<TT> TraceCompiler<TT> {
     //}
 
     fn iplace_to_location(&mut self, ip: &IPlace) -> Location {
-        match ip {
+        let ret = match ip {
             IPlace::Val{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
 
@@ -302,7 +302,10 @@ impl<TT> TraceCompiler<TT> {
             },
             IPlace::Const{val, ty} => Location::Const(val.clone(), *ty),
             _ => todo!(),
-        }
+        };
+
+        println!("place to location: {:?} -> {:?}", ip, ret);
+        ret
     }
 
     ///// Takes a `Place`, resolves all projections, and returns a `Location` containing the result.
@@ -498,7 +501,8 @@ impl<TT> TraceCompiler<TT> {
     fn local_to_location(&mut self, l: Local) -> Location {
         if l == INTERP_STEP_ARG {
             // The argument is a mutable reference in RDI.
-            Location::Mem(RegAndOffset{reg: RDI.code(), offs: 0})
+            //Location::Mem(RegAndOffset{reg: RDI.code(), offs: 0})
+            Location::Register(RDI.code())
         } else if let Some(location) = self.variable_location_map.get(&l) {
             // We already have a location for this local.
             location.clone()
@@ -1052,6 +1056,7 @@ impl<TT> TraceCompiler<TT> {
 
     /// Compile a TIR statement.
     fn c_statement(&mut self, stmt: &Statement) -> Result<(), CompileError> {
+        println!("stmt: {}", stmt);
         match stmt {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
@@ -1070,7 +1075,6 @@ impl<TT> TraceCompiler<TT> {
     }
 
     fn c_mkref(&mut self, dest: &IPlace, src: &IPlace) {
-        self.nop();
         let src_loc = self.iplace_to_location(src);
         match src_loc {
             Location::Register(..) => {
@@ -1089,7 +1093,6 @@ impl<TT> TraceCompiler<TT> {
         }
         let dest_loc = self.iplace_to_location(dest);
         self.store_raw(&dest_loc, &*TEMP_LOC, SIR.ty(&src.ty()).size());
-        self.nop();
     }
 
     fn c_istore(&mut self, dest: &IPlace, src: &IPlace) {
@@ -1100,6 +1103,7 @@ impl<TT> TraceCompiler<TT> {
     fn store(&mut self, dest_ip: &IPlace, src_ip: &IPlace) {
         let dest_loc = self.iplace_to_location(dest_ip);
         let src_loc = self.iplace_to_location(src_ip);
+        println!("store: {:?} <- {:?}", dest_ip, src_ip);
         self.store_raw(&dest_loc, &src_loc, SIR.ty(&dest_ip.ty()).size());
     }
 
@@ -1253,12 +1257,12 @@ impl<TT> TraceCompiler<TT> {
                     _ => todo!(),
                 }
             },
-            (Location::Register(dest_reg), Location::Indirect(dest_indloc)) => {
-                match dest_indloc {
-                    IndirectLoc::Register(dest_reg) => {
+            (Location::Register(dest_reg), Location::Indirect(src_indloc)) => {
+                match src_indloc {
+                    IndirectLoc::Register(src_reg) => {
                         match size {
                             8 => dynasm!(self.asm
-                                    ; mov Rq(dest_reg), QWORD [Rq(dest_reg)]
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_reg)]
                             ),
                             _ => todo!(),
                         }
@@ -1290,13 +1294,9 @@ impl<TT> TraceCompiler<TT> {
                                 let lo = src_i64 & 0xffffffff;
                                 let hi = src_i64 >> 32;
                                 dynasm!(self.asm
-                                    ; nop
-                                    ; nop
                                     ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
                                     ; mov QWORD [Rq(*TEMP_REG)], lo as i32
                                     ; mov QWORD [Rq(*TEMP_REG) + 4], hi as i32
-                                    ; nop
-                                    ; nop
                                 );
                             },
                             _ => todo!(),
@@ -1305,21 +1305,21 @@ impl<TT> TraceCompiler<TT> {
                 }
             },
             (Location::Indirect(dest_indloc), Location::Register(src_reg)) => {
-                debug_assert!(*src_reg != *TEMP_REG);
                 match dest_indloc {
                     IndirectLoc::Register(dest_reg) => {
-                        debug_assert!(*dest_reg != *TEMP_REG);
                         match size {
                             8 => {
                                 dynasm!(self.asm
-                                    ; mov Rq(*TEMP_REG), QWORD [Rq(dest_reg)]
-                                    ; mov QWORD [Rq(*TEMP_REG)], Rq(src_reg)
+                                    ; nop
+                                    ; mov QWORD [Rq(dest_reg)], Rq(src_reg)
+                                    ; nop
                                 );
                             },
                             _ => todo!(),
                         }
                     },
                     IndirectLoc::Mem(dest_ro) => {
+                        debug_assert!(*src_reg != *TEMP_REG);
                         match size {
                             8 => dynasm!(self.asm
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
@@ -1484,6 +1484,7 @@ impl<TT> TraceCompiler<TT> {
         // Make sure we didn't forget to free some temporaries.
         //assert!(tc.check_temporaries());
         tc.ret();
+        //tc.crash_dump(None);
         tc
     }
 
@@ -2090,6 +2091,7 @@ mod tests {
 
     #[test]
     fn test_ref_deref_simple() {
+        #[derive(Debug)]
         struct IO(u64);
 
         #[interp_step]
@@ -2108,7 +2110,9 @@ mod tests {
         println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
+        dbg!(&args);
         ct.execute(&mut args);
+        dbg!(&args);
         assert_eq!(args.0, 10);
     }
 
