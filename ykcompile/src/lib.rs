@@ -1250,8 +1250,8 @@ impl<TT> TraceCompiler<TT> {
                         let hi = c_i64 >> 32;
                         let lo = c_i64 & 0xffffffff;
                         dynasm!(self.asm
-                            ; mov QWORD [Rq(ro.reg) + ro.offs], lo as i32
-                            ; mov QWORD [Rq(ro.reg) + ro.offs + 4], hi as i32
+                            ; mov DWORD [Rq(ro.reg) + ro.offs], lo as i32
+                            ; mov DWORD [Rq(ro.reg) + ro.offs + 4], hi as i32
                         );
                     },
                     _ => todo!(),
@@ -1281,8 +1281,8 @@ impl<TT> TraceCompiler<TT> {
                                 let lo = src_i64 & 0xffffffff;
                                 let hi = src_i64 >> 32;
                                 dynasm!(self.asm
-                                    ; mov QWORD [Rq(src_reg)], lo as i32
-                                    ; mov QWORD [Rq(src_reg) + 4], hi as i32
+                                    ; mov DWORD [Rq(src_reg)], lo as i32
+                                    ; mov DWORD [Rq(src_reg) + 4], hi as i32
                                 );
                             },
                             _ => todo!(),
@@ -1295,8 +1295,8 @@ impl<TT> TraceCompiler<TT> {
                                 let hi = src_i64 >> 32;
                                 dynasm!(self.asm
                                     ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
-                                    ; mov QWORD [Rq(*TEMP_REG)], lo as i32
-                                    ; mov QWORD [Rq(*TEMP_REG) + 4], hi as i32
+                                    ; mov DWORD [Rq(*TEMP_REG)], lo as i32
+                                    ; mov DWORD [Rq(*TEMP_REG) + 4], hi as i32
                                 );
                             },
                             _ => todo!(),
@@ -1310,9 +1310,12 @@ impl<TT> TraceCompiler<TT> {
                         match size {
                             8 => {
                                 dynasm!(self.asm
-                                    ; nop
                                     ; mov QWORD [Rq(dest_reg)], Rq(src_reg)
-                                    ; nop
+                                );
+                            },
+                            1 => {
+                                dynasm!(self.asm
+                                    ; mov BYTE [Rq(dest_reg)], Rb(src_reg)
                                 );
                             },
                             _ => todo!(),
