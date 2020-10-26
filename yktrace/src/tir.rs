@@ -445,8 +445,8 @@ impl VarRenamer {
         match ip {
             IPlace::Val{local, offs, ty} =>
                 IPlace::Val{local: self.rename_local(local, body), offs: *offs, ty: *ty},
-            IPlace::Deref{local, offs, ty} =>
-                IPlace::Deref{local: self.rename_local(local, body), offs: *offs, ty: *ty},
+            IPlace::Deref{local, offs, post_offs, ty} =>
+                IPlace::Deref{local: self.rename_local(local, body), offs: *offs, post_offs: *post_offs, ty: *ty},
             IPlace::Const{..} => ip.clone(),
             IPlace::Unimplemented(..) => ip.clone(),
         }

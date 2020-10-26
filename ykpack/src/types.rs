@@ -470,7 +470,7 @@ pub enum IPlace {
     /// The IPlace describes a value as a Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
     /// A dereferenced IPlace. When we store to this, we have to go through a pointer.
-    Deref{local: Local, offs: u32, ty: TypeId},
+    Deref{local: Local, offs: u32, post_offs: i32, ty: TypeId},
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
@@ -487,11 +487,11 @@ impl Display for IPlace {
                     write!(f, "{}", local)
                 }
             },
-            Self::Deref{local, offs, ty: _ty} => {
+            Self::Deref{local, offs, post_offs, ty: _ty} => {
                 if *offs != 0 {
-                    write!(f, "*(${}+{})", local.0, offs)
+                    write!(f, "*(${}+{})+{}", local.0, offs, post_offs)
                 } else {
-                    write!(f, "*(${})", local.0)
+                    write!(f, "*(${})+{}", local.0, post_offs)
                 }
             },
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
@@ -519,8 +519,9 @@ impl IPlace {
 
     pub fn deref(&self) -> IPlace {
         match self {
-            Self::Val{local, offs, ty} | Self::Deref{local, offs, ty} => IPlace::Deref{local: *local, offs: *offs, ty: *ty},
+            Self::Val{local, offs, ty} => IPlace::Deref{local: *local, offs: *offs, post_offs: 0, ty: *ty},
             Self::Const{..} => todo!(),
+            Self::Deref{..} => unreachable!(),
             Self::Unimplemented(_) => unreachable!(),
         }
     }

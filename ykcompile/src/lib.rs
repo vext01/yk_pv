@@ -127,7 +127,7 @@ pub enum Location {
     /// A statically known memory location relative to a register.
     Mem(RegAndOffset),
     /// Location that contains a pointer to some underlying storage.
-    Indirect(IndirectLoc),
+    Indirect(IndirectLoc, i32),
     /// A statically known constant.
     Const(Constant, TypeId),
     /// A non-live location. Used by the register allocator.
@@ -275,18 +275,13 @@ impl<TT> TraceCompiler<TT> {
                 }
                 loc
             },
-            IPlace::Deref{local, offs, ty} => {
+            IPlace::Deref{local, offs, post_offs, ty} => {
                 let mut loc = self.local_to_location(*local);
 
                 // FIXME make a method on location and dedup.
                 if *offs != 0 {
                     match &mut loc {
-                        Location::Register(..) => {
-                            // FIXME make it so that the "something" is allocated on the stack.
-                            // Can we do this statically in the compiler?
-                            dbg!(SIR.ty(&ty));
-                            todo!("offsetting something in a register");
-                        },
+                        Location::Register(..) => todo!("offsetting something in a register"),
                         Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
                         Location::Const(..) => todo!("offsetting a constant"),
                         Location::Indirect(..) => todo!(),
@@ -299,7 +294,7 @@ impl<TT> TraceCompiler<TT> {
                     Location::Mem(ro) => IndirectLoc::Mem(ro),
                     _ => unreachable!(),
                 };
-                Location::Indirect(ind_loc)
+                Location::Indirect(ind_loc, *post_offs)
             },
             IPlace::Const{val, ty} => Location::Const(val.clone(), *ty),
             _ => todo!(),
@@ -1260,12 +1255,12 @@ impl<TT> TraceCompiler<TT> {
                     _ => todo!(),
                 }
             },
-            (Location::Register(dest_reg), Location::Indirect(src_indloc)) => {
+            (Location::Register(dest_reg), Location::Indirect(src_indloc, src_offs)) => {
                 match src_indloc {
                     IndirectLoc::Register(src_reg) => {
                         match size {
                             8 => dynasm!(self.asm
-                                    ; mov Rq(dest_reg), QWORD [Rq(src_reg)]
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_reg) + *src_offs]
                             ),
                             _ => todo!(),
                         }
@@ -1275,7 +1270,7 @@ impl<TT> TraceCompiler<TT> {
                             8 => {
                                 dynasm!(self.asm
                                     ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
-                                    ; mov Rq(dest_reg), QWORD [Rq(dest_reg)]
+                                    ; mov Rq(dest_reg), QWORD [Rq(dest_reg) + *src_offs]
                                 );
                             },
                             _ => todo!(),
@@ -1283,17 +1278,17 @@ impl<TT> TraceCompiler<TT> {
                     }
                 }
             }
-            (Location::Indirect(dest_indloc), Location::Const(src_cval, src_ty)) => {
+            (Location::Indirect(dest_indloc, dest_offs), Location::Const(src_cval, src_ty)) => {
                 let src_i64 = src_cval.i64_cast();
                 match dest_indloc {
-                    IndirectLoc::Register(src_reg) => {
+                    IndirectLoc::Register(src_reg) => { // FIXME wrongly named src_reg
                         match size {
                             8 => {
                                 let lo = src_i64 & 0xffffffff;
                                 let hi = src_i64 >> 32;
                                 dynasm!(self.asm
-                                    ; mov DWORD [Rq(src_reg)], lo as i32
-                                    ; mov DWORD [Rq(src_reg) + 4], hi as i32
+                                    ; mov DWORD [Rq(src_reg) + *dest_offs], lo as i32
+                                    ; mov DWORD [Rq(src_reg) + *dest_offs + 4], hi as i32
                                 );
                             },
                             _ => todo!(),
@@ -1307,8 +1302,8 @@ impl<TT> TraceCompiler<TT> {
                                 let hi = src_i64 >> 32;
                                 dynasm!(self.asm
                                     ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
-                                    ; mov DWORD [Rq(*TEMP_REG)], lo as i32
-                                    ; mov DWORD [Rq(*TEMP_REG) + 4], hi as i32
+                                    ; mov DWORD [Rq(*TEMP_REG) + *dest_offs], lo as i32
+                                    ; mov DWORD [Rq(*TEMP_REG) + *dest_offs + 4], hi as i32
                                 );
                             },
                             _ => todo!(),
@@ -1316,18 +1311,18 @@ impl<TT> TraceCompiler<TT> {
                     }
                 }
             },
-            (Location::Indirect(dest_indloc), Location::Register(src_reg)) => {
+            (Location::Indirect(dest_indloc, dest_offs), Location::Register(src_reg)) => {
                 match dest_indloc {
                     IndirectLoc::Register(dest_reg) => {
                         match size {
                             8 => {
                                 dynasm!(self.asm
-                                    ; mov QWORD [Rq(dest_reg)], Rq(src_reg)
+                                    ; mov QWORD [Rq(dest_reg) + *dest_offs], Rq(src_reg)
                                 );
                             },
                             1 => {
                                 dynasm!(self.asm
-                                    ; mov BYTE [Rq(dest_reg)], Rb(src_reg)
+                                    ; mov BYTE [Rq(dest_reg) + *dest_offs], Rb(src_reg)
                                 );
                             },
                             _ => todo!(),
@@ -1338,14 +1333,14 @@ impl<TT> TraceCompiler<TT> {
                         match size {
                             8 => dynasm!(self.asm
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
-                                ; mov QWORD [Rq(*TEMP_REG)], Rq(src_reg)
+                                ; mov QWORD [Rq(*TEMP_REG) + *dest_offs], Rq(src_reg)
                             ),
                             _ => todo!(),
                         }
                     }
                 }
             },
-            (Location::Mem(dest_ro), Location::Indirect(src_ind)) => {
+            (Location::Mem(dest_ro), Location::Indirect(src_ind, src_offs)) => {
                 debug_assert!(dest_ro.reg != *TEMP_REG);
                 match src_ind {
                     IndirectLoc::Mem(src_ro) => {
@@ -1357,7 +1352,7 @@ impl<TT> TraceCompiler<TT> {
                                 // Load pointer into temp.
                                 ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
                                 // Deref pointer
-                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG)]
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
                                 // Store result back to mem.
                                 ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
                             ),
