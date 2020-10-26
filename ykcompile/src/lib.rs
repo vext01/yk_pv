@@ -284,6 +284,7 @@ impl<TT> TraceCompiler<TT> {
                         Location::Register(..) => {
                             // FIXME make it so that the "something" is allocated on the stack.
                             // Can we do this statically in the compiler?
+                            dbg!(SIR.ty(&ty));
                             todo!("offsetting something in a register");
                         },
                         Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
@@ -304,7 +305,7 @@ impl<TT> TraceCompiler<TT> {
             _ => todo!(),
         };
 
-        println!("place to location: {:?} -> {:?}", ip, ret);
+        //println!("place to location: {:?} -> {:?}", ip, ret);
         ret
     }
 
@@ -1103,7 +1104,6 @@ impl<TT> TraceCompiler<TT> {
     fn store(&mut self, dest_ip: &IPlace, src_ip: &IPlace) {
         let dest_loc = self.iplace_to_location(dest_ip);
         let src_loc = self.iplace_to_location(src_ip);
-        println!("store: {:?} <- {:?}", dest_ip, src_ip);
         self.store_raw(&dest_loc, &src_loc, SIR.ty(&dest_ip.ty()).size());
     }
 
@@ -1147,6 +1147,8 @@ impl<TT> TraceCompiler<TT> {
             }
             (Location::Mem(dest_ro), Location::Mem(src_ro)) => {
                 if size <= 8 {
+                    debug_assert!(dest_ro.reg != *TEMP_REG);
+                    debug_assert!(src_ro.reg != *TEMP_REG);
                     match size {
                         0 => (), // ZST.
                         1 => {
@@ -1212,6 +1214,7 @@ impl<TT> TraceCompiler<TT> {
                         let i32_c = i32::try_from(c_val.i64_cast()).unwrap();
                         dynasm!(self.asm
                             ; mov Rq(dest_reg), i64_c as i32
+                            ; nop
                         );
                     } else {
                         // Can't move 64-bit constants in x86_64.
@@ -1267,8 +1270,16 @@ impl<TT> TraceCompiler<TT> {
                             _ => todo!(),
                         }
                     },
-                    IndirectLoc::Mem(dest_ro) => {
-                        todo!();
+                    IndirectLoc::Mem(src_ro) => {
+                        match size {
+                            8 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov Rq(dest_reg), QWORD [Rq(dest_reg)]
+                                );
+                            },
+                            _ => todo!(),
+                        }
                     }
                 }
             }
@@ -1289,6 +1300,7 @@ impl<TT> TraceCompiler<TT> {
                         }
                     },
                     IndirectLoc::Mem(dest_ro) => {
+                        debug_assert!(dest_ro.reg != *TEMP_REG);
                         match size {
                             8 => {
                                 let lo = src_i64 & 0xffffffff;
@@ -1333,10 +1345,30 @@ impl<TT> TraceCompiler<TT> {
                     }
                 }
             },
-            _ => {
-                todo!();
+            (Location::Mem(dest_ro), Location::Indirect(src_ind)) => {
+                debug_assert!(dest_ro.reg != *TEMP_REG);
+                match src_ind {
+                    IndirectLoc::Mem(src_ro) => {
+                        debug_assert!(src_ro.reg != *TEMP_REG);
+                        dbg!("---", dest_ro, src_ind);
+                        match size {
+                            0 => (), // ZST.
+                            8 => dynasm!(self.asm
+                                // Load pointer into temp.
+                                ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
+                                // Deref pointer
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG)]
+                                // Store result back to mem.
+                                ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
+                            ),
+                            _ => todo!(),
+                        }
+                    },
+                    IndirectLoc::Register(r) => todo!(),
+                }
             },
             (Location::NotLive, _) | (_, Location::NotLive) => unreachable!(),
+            _ => todo!(),
         }
     }
 
@@ -2000,7 +2032,6 @@ mod tests {
         interp_stepx(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(5, 2, 0);
         ct.execute(&mut args);
@@ -2110,17 +2141,14 @@ mod tests {
         interp_step(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
-        dbg!(&args);
         ct.execute(&mut args);
-        dbg!(&args);
         assert_eq!(args.0, 10);
     }
 
     #[test]
-    fn test_ref_deref_double() {
+    fn test_ref_deref_double_xxx() {
         #[derive(Debug)]
         struct IO(u64);
 
@@ -2137,13 +2165,35 @@ mod tests {
         interp_step(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        let ct = TraceCompiler::<IO>::compile(tir_trace);
+        let mut args = IO(0);
+        ct.execute(&mut args);
+        assert_eq!(args.0, 4);
+    }
+
+    #[test]
+    fn test_ref_deref_double_and_field() {
+        #[derive(Debug)]
+        struct IO(u64);
+
+        #[interp_step]
+        fn interp_step(io: &mut IO) {
+            let five = 5;
+            let mut s = (4u64, &five);
+            let y = &mut s;
+            io.0 = *y.1;
+        }
+
+        let mut inputs = IO(0);
+        let th = start_tracing(TracingKind::HardwareTracing);
+        interp_step(&mut inputs);
+        let sir_trace = th.stop_tracing().unwrap();
+        let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
         println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
-        dbg!(&args);
         ct.execute(&mut args);
-        dbg!(&args);
-        assert_eq!(args.0, 4);
+        assert_eq!(args.0, 5);
     }
 
     #[test]
