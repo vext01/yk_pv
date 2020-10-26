@@ -2120,6 +2120,33 @@ mod tests {
     }
 
     #[test]
+    fn test_ref_deref_double() {
+        #[derive(Debug)]
+        struct IO(u64);
+
+        #[interp_step]
+        fn interp_step(io: &mut IO) {
+            let mut x = 9;
+            let y = &mut &mut x;
+            **y = 4;
+            io.0 = x;
+        }
+
+        let mut inputs = IO(0);
+        let th = start_tracing(TracingKind::HardwareTracing);
+        interp_step(&mut inputs);
+        let sir_trace = th.stop_tracing().unwrap();
+        let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
+        let ct = TraceCompiler::<IO>::compile(tir_trace);
+        let mut args = IO(0);
+        dbg!(&args);
+        ct.execute(&mut args);
+        dbg!(&args);
+        assert_eq!(args.0, 4);
+    }
+
+    #[test]
     fn test_ref_deref_stack() {
         struct IO(u64);
 
