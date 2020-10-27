@@ -573,7 +573,10 @@ impl<TT> TraceCompiler<TT> {
             Some(Location::Mem { .. }) | Some(Location::Indirect(..)) => {}
             Some(Location::NotLive) => unreachable!(),
             Some(Location::Const(..)) => unreachable!(),
-            None => unreachable!("freeing unallocated register"),
+            None => {
+                dbg!(self.variable_location_map.get(local));
+                unreachable!("freeing unallocated register");
+            },
         }
         self.variable_location_map.insert(*local, Location::NotLive);
         Ok(())
@@ -723,23 +726,15 @@ impl<TT> TraceCompiler<TT> {
     //    Location::Register(reg)
     //}
 
-    ///// Compile the entry into an inlined function call.
-    //fn c_enter(&mut self, args: &Vec<Operand>, off: u32) {
-    //    // Move call arguments into registers.
-    //    for (op, i) in args.iter().zip(1..) {
-    //        let loc = match op {
-    //            Operand::Place(p) => self.c_place(p),
-    //            Operand::Constant(c) => match c {
-    //                Constant::Int(ci) => self.c_constint(ci),
-    //                Constant::Bool(b) => self.c_bool(*b),
-    //                c => todo!("{}", c),
-    //            },
-    //        };
-    //        let arg_idx = Place::from(Local(i + off));
-    //        self.store(&arg_idx, loc.clone());
-    //        //self.free_if_temp(loc);
-    //    }
-    //}
+    /// Compile the entry into an inlined function call.
+    fn c_enter(&mut self, args: &Vec<IPlace>, off: u32) {
+        for (idx, src_ip) in args.iter().enumerate() {
+            let idx = u32::try_from(idx).unwrap();
+            let dest_ip = IPlace::Val{local: Local(idx + off + 1), offs: 0, ty: src_ip.ty()};
+            dbg!(&dest_ip, &src_ip);
+            self.store(&dest_ip, &src_ip)
+        }
+    }
 
     /// Push all of the caller-save registers to the stack.
     fn caller_save(&mut self) {
@@ -759,124 +754,125 @@ impl<TT> TraceCompiler<TT> {
         }
     }
 
-    ///// Compile a call to a native symbol using the Sys-V ABI. This is used for occasions where you
-    ///// don't want to, or cannot, inline the callee (e.g. it's a foreign function).
-    /////
-    ///// For now we do something very simple. There are limitations (FIXME):
-    /////
-    /////  - We assume there are no more than 6 arguments (spilling is not yet implemented).
-    /////
-    /////  - We push all of the callee save registers on the stack, and local variable arguments are
-    /////    then loaded back from the stack into the correct ABI-specified registers. We can
-    /////    optimise this later by only loading an argument from the stack if it cannot be loaded
-    /////    from its original register location (because another argument overwrote it already).
-    /////
-    /////  - We assume the return value fits in rax. 128-bit return values are not yet supported.
-    /////
-    /////  - We don't support varags calls.
-    /////
-    /////  - RAX is clobbered.
-    //fn c_call(
-    //    &mut self,
-    //    opnd: &CallOperand,
-    //    args: &Vec<Operand>,
-    //    dest: &Option<Place>,
-    //) -> Result<(), CompileError> {
-    //    let sym = if let CallOperand::Fn(sym) = opnd {
-    //        sym
-    //    } else {
-    //        todo!("unknown call target");
-    //    };
+    /// Compile a call to a native symbol using the Sys-V ABI. This is used for occasions where you
+    /// don't want to, or cannot, inline the callee (e.g. it's a foreign function).
+    ///
+    /// For now we do something very simple. There are limitations (FIXME):
+    ///
+    ///  - We assume there are no more than 6 arguments (spilling is not yet implemented).
+    ///
+    ///  - We push all of the callee save registers on the stack, and local variable arguments are
+    ///    then loaded back from the stack into the correct ABI-specified registers. We can
+    ///    optimise this later by only loading an argument from the stack if it cannot be loaded
+    ///    from its original register location (because another argument overwrote it already).
+    ///
+    ///  - We assume the return value fits in rax. 128-bit return values are not yet supported.
+    ///
+    ///  - We don't support varags calls.
+    ///
+    ///  - RAX is clobbered.
+    fn c_call(
+       &mut self,
+       opnd: &CallOperand,
+       args: &Vec<IPlace>,
+       dest: &Option<IPlace>,
+    ) -> Result<(), CompileError> {
+       let sym = if let CallOperand::Fn(sym) = opnd {
+           sym
+       } else {
+           todo!("unknown call target");
+       };
 
-    //    if args.len() > 6 {
-    //        todo!("call with spilled args");
-    //    }
+       if args.len() > 6 {
+           todo!("call with spilled args");
+       }
 
-    //    // Save Sys-V caller save registers to the stack, but skip the one (if there is one) that
-    //    // will store the return value. It's safe to assume the caller expects this to be
-    //    // clobbered.
-    //    //
-    //    // FIXME: Note that we don't save RAX. Although this is a caller save register, we are
-    //    // currently using RAX as a general purpose register in parts of the compiler (the register
-    //    // allocator thus never gives out RAX). In this case we use it to store the result from the
-    //    // call in its destination, so we must not override it when returning from the call.
-    //    self.caller_save();
+       // Save Sys-V caller save registers to the stack, but skip the one (if there is one) that
+       // will store the return value. It's safe to assume the caller expects this to be
+       // clobbered.
+       //
+       // FIXME: Note that we don't save RAX. Although this is a caller save register, we are
+       // currently using RAX as a general purpose register in parts of the compiler (the register
+       // allocator thus never gives out RAX). In this case we use it to store the result from the
+       // call in its destination, so we must not override it when returning from the call.
+       self.caller_save();
 
-    //    // Helper function to find the index of a caller-save register previously pushed to the stack.
-    //    // The first register pushed is at the highest stack offset (from the stack pointer), hence
-    //    // reversing the order of `save_regs`.
-    //    let stack_index = |reg: u8| -> i32 {
-    //        i32::try_from(
-    //            CALLER_SAVE_REGS
-    //                .iter()
-    //                .rev()
-    //                .position(|&r| r == reg)
-    //                .unwrap(),
-    //        )
-    //        .unwrap()
-    //    };
+       // Helper function to find the index of a caller-save register previously pushed to the stack.
+       // The first register pushed is at the highest stack offset (from the stack pointer), hence
+       // reversing the order of `save_regs`.
+       let stack_index = |reg: u8| -> i32 {
+           i32::try_from(
+               CALLER_SAVE_REGS
+                   .iter()
+                   .rev()
+                   .position(|&r| r == reg)
+                   .unwrap(),
+           )
+           .unwrap()
+       };
 
-    //    // Sys-V ABI dictates the first 6 arguments are passed in these registers.
-    //    // The order is reversed so they pop() in the right order.
-    //    let mut arg_regs = vec![R9, R8, RCX, RDX, RSI, RDI]
-    //        .iter()
-    //        .map(|r| r.code())
-    //        .collect::<Vec<u8>>();
+       // Sys-V ABI dictates the first 6 arguments are passed in these registers.
+       // The order is reversed so they pop() in the right order.
+       let mut arg_regs = vec![R9, R8, RCX, RDX, RSI, RDI]
+           .iter()
+           .map(|r| r.code())
+           .collect::<Vec<u8>>();
 
-    //    for arg in args {
-    //        // `unwrap()` must succeed, as we checked there are no more than 6 args above.
-    //        let arg_reg = arg_regs.pop().unwrap();
+       for arg in args {
+           // In which register will this argument be passed?
+           // `unwrap()` must succeed, as we checked there are no more than 6 args above.
+           let arg_reg = arg_regs.pop().unwrap();
 
-    //        match arg {
-    //            Operand::Place(place) => {
-    //                // Load argument back from the stack.
-    //                let (loc, _) = self.place_to_location(place, false);
-    //                match &loc {
-    //                    Location::Register(reg) => {
-    //                        let off = stack_index(*reg) * 8;
-    //                        dynasm!(self.asm
-    //                            ; mov Rq(arg_reg), [rsp + off]
-    //                        );
-    //                    }
-    //                    Location::Mem(ro) => {
-    //                        dynasm!(self.asm
-    //                            ; mov Rq(arg_reg), [Rq(ro.reg) + ro.offs]
-    //                        );
-    //                    }
-    //                    Location::Addr(_) | Location::NotLive => unreachable!(),
-    //                };
-    //                //self.free_if_temp(loc);
-    //            }
-    //            Operand::Constant(c) => {
-    //                dynasm!(self.asm
-    //                    ; mov Rq(arg_reg), QWORD c.i64_cast()
-    //                );
-    //            }
-    //        };
-    //    }
+           // Now load the argument into the correct argument register.
+           match self.iplace_to_location(arg) {
+               Location::Register(reg) => {
+                   // The value *was* in a register before we pushed it with caller_save().
+                   // We load it back from the stack now.
+                   // FIXME assumes that anything in a register was pushed. In reality only caller
+                   // save registers were. stack_index() will crash, so we will know when it's gone
+                   // wrong.
+                   let off = stack_index(reg) * 8;
+                   dynasm!(self.asm
+                       ; mov Rq(arg_reg), [rsp + off]
+                   );
+               },
+               Location::Mem(ro) => dynasm!(self.asm
+                   ; mov Rq(arg_reg), [Rq(ro.reg) + ro.offs]
+               ),
+               Location::Indirect(..) => todo!(),
+               Location::Const(c, ..) => {
+                   // FIXME assumes constant fits in a register.
+                   dynasm!(self.asm
+                       ; mov Rq(arg_reg), QWORD c.i64_cast()
+                   );
+               },
+               Location::NotLive => unreachable!(),
+           }
+       }
 
-    //    let sym_addr = if let Some(addr) = self.addr_map.get(sym) {
-    //        *addr as i64
-    //    } else {
-    //        TraceCompiler::<TT>::find_symbol(sym)? as i64
-    //    };
-    //    dynasm!(self.asm
-    //        // In Sys-V ABI, `al` is a hidden argument used to specify the number of vector args
-    //        // for a vararg call. We don't support this right now, so set it to zero.
-    //        ; xor rax, rax
-    //        ; mov r11, QWORD sym_addr
-    //        ; call r11
-    //    );
+       let sym_addr = if let Some(addr) = self.addr_map.get(sym) {
+           *addr as i64
+       } else {
+           TraceCompiler::<TT>::find_symbol(sym)? as i64
+       };
+       dynasm!(self.asm
+           // In Sys-V ABI, `al` is a hidden argument used to specify the number of vector args
+           // for a vararg call. We don't support this right now, so set it to zero.
+           ; xor rax, rax
+           ; mov r11, QWORD sym_addr
+           ; call r11
+       );
 
-    //    // Restore caller-save registers.
-    //    self.caller_save_restore();
+       // Restore caller-save registers.
+       self.caller_save_restore();
 
-    //    if let Some(d) = dest {
-    //        self.store(d, Location::Register(RAX.code()));
-    //    }
+       if let Some(d) = dest {
+           let dest_loc = self.iplace_to_location(d);
+           self.store_raw(&dest_loc, &Location::Register(RAX.code()), SIR.ty(&d.ty()).size());
+       }
 
-    //    Ok(())
-    //}
+       Ok(())
+    }
 
     /// Compile a checked binary operation into a `Location`.
     //fn c_checked_binop(&mut self, binop: &BinOp, op1: &Operand, op2: &Operand) -> Location {
@@ -1086,10 +1082,10 @@ impl<TT> TraceCompiler<TT> {
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
             //Statement::Deref(dest, src) => todo!(), //self.c_deref(dest, src),
-            Statement::Enter(_, args, _dest, off) => todo!(), //self.c_enter(args, *off),
+            Statement::Enter(_, args, _dest, off) => self.c_enter(args, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
-            Statement::Call(target, args, dest) => todo!(), //self.c_call(target, args, dest)?,
+            Statement::Call(target, args, dest) => self.c_call(target, args, dest)?,
             Statement::Nop => {}
             Statement::Unimplemented(s) => todo!("{:?}", s),
             Statement::Debug(..) => {},
