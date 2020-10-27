@@ -300,7 +300,6 @@ impl<TT> TraceCompiler<TT> {
             _ => todo!(),
         };
 
-        //println!("place to location: {:?} -> {:?}", ip, ret);
         ret
     }
 
@@ -1679,7 +1678,6 @@ mod tests {
         simple(&mut IO(0));
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);
@@ -2279,7 +2277,6 @@ mod tests {
         interp_step(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);
