@@ -166,6 +166,18 @@ impl Location {
             panic!("tried to unwrap a Register location when it wasn't a Register");
         }
     }
+
+    /// Returns which register (if any) is used in addressing this location.
+    fn uses_reg(&self) -> Option<u8> {
+        match self {
+            Location::Register(reg) => Some(*reg),
+            Location::Mem(RegAndOffset{reg, ..}) => Some(*reg),
+            Location::Indirect(IndirectLoc::Register(reg), ..) => Some(*reg),
+            Location::Indirect(IndirectLoc::Mem(RegAndOffset{reg, ..}), ..) => Some(*reg),
+            Location::Const(..) => None,
+            Location::NotLive => unreachable!(),
+        }
+    }
 }
 
 /// Allocation of one of the LOCAL_REGS. Temporary registers are tracked separately.
@@ -1081,7 +1093,6 @@ impl<TT> TraceCompiler<TT> {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
-            //Statement::Deref(dest, src) => todo!(), //self.c_deref(dest, src),
             Statement::Enter(_, args, _dest, off) => self.c_enter(args, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
@@ -1102,13 +1113,31 @@ impl<TT> TraceCompiler<TT> {
                 // referenced onto the stack and never in registers.
                 unreachable!()
             },
-            Location::Mem(ro) => {
+            Location::Mem(ref ro) => {
+                debug_assert!(src_loc.uses_reg() != Some(*TEMP_REG));
                 dynasm!(self.asm
                     ; lea Rq(*TEMP_REG), [Rq(ro.reg) + ro.offs]
                 );
             },
             Location::Const(..) => todo!(),
-            Location::Indirect(..) => todo!(),
+            Location::Indirect(ref ind_loc, offs) => {
+                debug_assert!(src_loc.uses_reg() != Some(*TEMP_REG));
+                match ind_loc {
+                    IndirectLoc::Register(reg) => {
+                        dynasm!(self.asm
+                            ; mov Rq(*TEMP_REG), [Rq(reg)]
+                            ; add Rq(*TEMP_REG), offs
+                        );
+                    },
+                    IndirectLoc::Mem(ro) => {
+                        dynasm!(self.asm
+                            ; lea Rq(*TEMP_REG), [Rq(ro.reg) + ro.offs]
+                            ; mov Rq(*TEMP_REG), [Rq(*TEMP_REG)]
+                            ; add Rq(*TEMP_REG), offs
+                        );
+                    }
+                }
+            }
             Location::NotLive => unreachable!(),
         }
         let dest_loc = self.iplace_to_location(dest);
@@ -1477,7 +1506,17 @@ impl<TT> TraceCompiler<TT> {
                             _ => todo!(),
                         }
                     },
-                    IndirectLoc::Register(r) => todo!(),
+                    IndirectLoc::Register(src_reg) => {
+                        debug_assert!(*src_reg != *TEMP_REG);
+                        match size {
+                            0 => (), // ZST.
+                            8 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(src_reg) + *src_offs]
+                                ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
+                            ),
+                            _ => todo!(),
+                        }
+                    },
                 }
             },
             (Location::Indirect(dest_ind, dest_offs), Location::Mem(src_ro)) => {
