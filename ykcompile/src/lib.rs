@@ -1108,6 +1108,9 @@ impl<TT> TraceCompiler<TT> {
         // This is the one place in the compiler where we allow an explosion of cases. If elsewhere
         // you find yourself matching over a pair of locations you should try and re-work you code
         // so it calls this.
+        //
+        // FIXME avoid partial register stalls.
+        // FIXME assumes constants fit in a register.
         match (&dest_loc, &src_loc) {
             (Location::Register(dest_reg), Location::Register(src_reg)) => {
                 dynasm!(self.asm
@@ -1209,7 +1212,6 @@ impl<TT> TraceCompiler<TT> {
                         let i32_c = i32::try_from(c_val.i64_cast()).unwrap();
                         dynasm!(self.asm
                             ; mov Rq(dest_reg), i64_c as i32
-                            ; nop
                         );
                     } else {
                         // Can't move 64-bit constants in x86_64.
@@ -1262,6 +1264,15 @@ impl<TT> TraceCompiler<TT> {
                             8 => dynasm!(self.asm
                                     ; mov Rq(dest_reg), QWORD [Rq(src_reg) + *src_offs]
                             ),
+                            4 => dynasm!(self.asm
+                                    ; mov Rd(dest_reg), DWORD [Rq(src_reg) + *src_offs]
+                            ),
+                            2 => dynasm!(self.asm
+                                    ; mov Rw(dest_reg), WORD [Rq(src_reg) + *src_offs]
+                            ),
+                            1 => dynasm!(self.asm
+                                    ; mov Rb(dest_reg), BYTE [Rq(src_reg) + *src_offs]
+                            ),
                             _ => todo!(),
                         }
                     },
@@ -1271,6 +1282,24 @@ impl<TT> TraceCompiler<TT> {
                                 dynasm!(self.asm
                                     ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
                                     ; mov Rq(dest_reg), QWORD [Rq(dest_reg) + *src_offs]
+                                );
+                            },
+                            4 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov Rd(dest_reg), DWORD [Rq(dest_reg) + *src_offs]
+                                );
+                            },
+                            2 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov Rw(dest_reg), WORD [Rq(dest_reg) + *src_offs]
+                                );
+                            },
+                            1 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(dest_reg), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov Rb(dest_reg), BYTE [Rq(dest_reg) + *src_offs]
                                 );
                             },
                             _ => todo!(),
@@ -1291,6 +1320,21 @@ impl<TT> TraceCompiler<TT> {
                                     ; mov DWORD [Rq(src_reg) + *dest_offs + 4], hi as i32
                                 );
                             },
+                            4 => {
+                                dynasm!(self.asm
+                                    ; mov DWORD [Rq(src_reg) + *dest_offs], src_i64 as i32
+                                );
+                            },
+                            2 => {
+                                dynasm!(self.asm
+                                    ; mov WORD [Rq(src_reg) + *dest_offs], src_i64 as i16
+                                );
+                            },
+                            1 => {
+                                dynasm!(self.asm
+                                    ; mov BYTE [Rq(src_reg) + *dest_offs], src_i64 as i8
+                                );
+                            },
                             _ => todo!(),
                         }
                     },
@@ -1306,6 +1350,24 @@ impl<TT> TraceCompiler<TT> {
                                     ; mov DWORD [Rq(*TEMP_REG) + *dest_offs + 4], hi as i32
                                 );
                             },
+                            4 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                    ; mov DWORD [Rq(*TEMP_REG) + *dest_offs], src_i64 as i32
+                                );
+                            },
+                            2 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                    ; mov WORD [Rq(*TEMP_REG) + *dest_offs], src_i64 as i16
+                                );
+                            },
+                            1 => {
+                                dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                    ; mov BYTE [Rq(*TEMP_REG) + *dest_offs], src_i64 as i8
+                                );
+                            },
                             _ => todo!(),
                         }
                     }
@@ -1318,6 +1380,16 @@ impl<TT> TraceCompiler<TT> {
                             8 => {
                                 dynasm!(self.asm
                                     ; mov QWORD [Rq(dest_reg) + *dest_offs], Rq(src_reg)
+                                );
+                            },
+                            4 => {
+                                dynasm!(self.asm
+                                    ; mov DWORD [Rq(dest_reg) + *dest_offs], Rd(src_reg)
+                                );
+                            },
+                            2 => {
+                                dynasm!(self.asm
+                                    ; mov WORD [Rq(dest_reg) + *dest_offs], Rw(src_reg)
                                 );
                             },
                             1 => {
@@ -1335,6 +1407,18 @@ impl<TT> TraceCompiler<TT> {
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
                                 ; mov QWORD [Rq(*TEMP_REG) + *dest_offs], Rq(src_reg)
                             ),
+                            4 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                ; mov DWORD [Rq(*TEMP_REG) + *dest_offs], Rd(src_reg)
+                            ),
+                            2 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                ; mov WORD [Rq(*TEMP_REG) + *dest_offs], Rw(src_reg)
+                            ),
+                            1 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(dest_ro.reg) + dest_ro.offs]
+                                ; mov BYTE [Rq(*TEMP_REG) + *dest_offs], Rb(src_reg)
+                            ),
                             _ => todo!(),
                         }
                     }
@@ -1345,16 +1429,27 @@ impl<TT> TraceCompiler<TT> {
                 match src_ind {
                     IndirectLoc::Mem(src_ro) => {
                         debug_assert!(src_ro.reg != *TEMP_REG);
-                        dbg!("---", dest_ro, src_ind);
                         match size {
                             0 => (), // ZST.
                             8 => dynasm!(self.asm
-                                // Load pointer into temp.
                                 ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
-                                // Deref pointer
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
-                                // Store result back to mem.
                                 ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
+                            ),
+                            4 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
+                                ; mov DWORD [Rq(dest_ro.reg) + dest_ro.offs], Rd(*TEMP_REG)
+                            ),
+                            2 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
+                                ; mov WORD [Rq(dest_ro.reg) + dest_ro.offs], Rw(*TEMP_REG)
+                            ),
+                            1 => dynasm!(self.asm
+                                ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
+                                ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
+                                ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(*TEMP_REG)
                             ),
                             _ => todo!(),
                         }
