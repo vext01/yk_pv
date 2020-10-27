@@ -1027,7 +1027,22 @@ impl<TT> TraceCompiler<TT> {
                 }
             },
             Location::Mem(..) => todo!(),
-            Location::Const(..) => todo!(),
+            Location::Const(c, ..) => {
+                let val = c.i64_cast();
+                if val as u32 > u32::MAX {
+                    // Work around x86_64 encoding limitations (no imm64 operands).
+                    todo!();
+                }
+                match size {
+                    1 | 2 | 4 => todo!(),
+                    8 => {
+                        dynasm!(self.asm
+                            ; add Rq(*TEMP_REG), val as i32
+                        );
+                    },
+                    _ => unreachable!(format!("{}", SIR.ty(&dest.ty()))),
+                }
+            },
             Location::Const(..) => todo!(),
             Location::Indirect(..) => todo!(),
             Location::NotLive => todo!(),
@@ -1103,7 +1118,6 @@ impl<TT> TraceCompiler<TT> {
 
     /// Stores src_loc into dest_loc.
     fn store_raw(&mut self, dest_loc: &Location, src_loc: &Location, size: u64) {
-        dbg!(dest_loc, src_loc);
         // This is the one place in the compiler where we allow an explosion of cases. If elsewhere
         // you find yourself matching over a pair of locations you should try and re-work you code
         // so it calls this.
@@ -1454,6 +1468,29 @@ impl<TT> TraceCompiler<TT> {
                         }
                     },
                     IndirectLoc::Register(r) => todo!(),
+                }
+            },
+
+            /////////
+            (Location::Indirect(dest_ind, dest_offs), Location::Mem(src_ro)) => {
+                if size <= 8 {
+                    debug_assert!(src_ro.reg != *TEMP_REG);
+                    match dest_ind {
+                        IndirectLoc::Register(dest_reg) => {
+                            debug_assert!(*dest_reg != *TEMP_REG);
+                            match size {
+                                0 => (), // ZST.
+                                8 => dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov QWORD [Rq(dest_reg) + *dest_offs], Rq(*TEMP_REG)
+                                ),
+                                _ => todo!(),
+                            }
+                        }
+                        IndirectLoc::Mem(dest_ro) => todo!(),
+                    }
+                } else {
+                    todo!();
                 }
             },
             (Location::NotLive, _) | (_, Location::NotLive) => unreachable!(),
@@ -2120,6 +2157,7 @@ mod tests {
         interp_stepx(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(5, 2, 0);
         ct.execute(&mut args);
@@ -2277,6 +2315,7 @@ mod tests {
         interp_step(&mut inputs);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);

@@ -145,7 +145,7 @@ impl<'a> TirTrace<'a> {
                                 dest: rnm.rename_iplace(dest, body),
                                 op: op.clone(),
                                 opnd1: rnm.rename_iplace(opnd1, body),
-                                opnd2: rnm.rename_iplace(opnd1, body),
+                                opnd2: rnm.rename_iplace(opnd2, body),
                                 checked: *checked
                             },
                         Statement::Nop => stmt.clone(),
@@ -351,7 +351,6 @@ impl<'a> TirTrace<'a> {
             //}
         }
 
-        dbg!(&local_decls);
         Ok(Self {
             ops,
             local_decls,
