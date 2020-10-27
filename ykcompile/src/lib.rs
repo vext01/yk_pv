@@ -1034,7 +1034,21 @@ impl<TT> TraceCompiler<TT> {
                     todo!();
                 }
                 match size {
-                    1 | 2 | 4 => todo!(),
+                    1 => {
+                        dynasm!(self.asm
+                            ; add Rb(*TEMP_REG), val as i8
+                        );
+                    },
+                    2 => {
+                        dynasm!(self.asm
+                            ; add Rw(*TEMP_REG), val as i16
+                        );
+                    },
+                    4 => {
+                        dynasm!(self.asm
+                            ; add Rd(*TEMP_REG), val as i32
+                        );
+                    },
                     8 => {
                         dynasm!(self.asm
                             ; add Rq(*TEMP_REG), val as i32
@@ -1470,8 +1484,6 @@ impl<TT> TraceCompiler<TT> {
                     IndirectLoc::Register(r) => todo!(),
                 }
             },
-
-            /////////
             (Location::Indirect(dest_ind, dest_offs), Location::Mem(src_ro)) => {
                 if size <= 8 {
                     debug_assert!(src_ro.reg != *TEMP_REG);
@@ -1483,6 +1495,18 @@ impl<TT> TraceCompiler<TT> {
                                 8 => dynasm!(self.asm
                                     ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
                                     ; mov QWORD [Rq(dest_reg) + *dest_offs], Rq(*TEMP_REG)
+                                ),
+                                4 => dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov DWORD [Rq(dest_reg) + *dest_offs], Rd(*TEMP_REG)
+                                ),
+                                2 => dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov WORD [Rq(dest_reg) + *dest_offs], Rw(*TEMP_REG)
+                                ),
+                                1 => dynasm!(self.asm
+                                    ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
+                                    ; mov BYTE [Rq(dest_reg) + *dest_offs], Rb(*TEMP_REG)
                                 ),
                                 _ => todo!(),
                             }

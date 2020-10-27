@@ -797,6 +797,7 @@ impl From<Place> for Operand {
 pub enum Constant {
     Int(ConstantInt),
     Bool(bool),
+    Tuple(TypeId), // FIXME assumed to be unit for now. Needs a value in here.
     Unimplemented(String),
 }
 
@@ -805,6 +806,7 @@ impl Constant {
         match self {
             Self::Int(ci) => ci.i64_cast(),
             Self::Bool(b) => *b as i64,
+            Self::Tuple(..) => unreachable!(),
             Self::Unimplemented(_) => unreachable!(),
         }
     }
@@ -815,6 +817,7 @@ impl Display for Constant {
         match self {
             Constant::Int(i) => write!(f, "{}", i),
             Constant::Bool(b) => write!(f, "{}", b),
+            Constant::Tuple(..) => write!(f, "()"), // FIXME assumed unit.
             Constant::Unimplemented(s) => write!(f, "unimplemented constant: {:?}", s),
         }
     }
