@@ -392,9 +392,6 @@ struct VarRenamer {
     /// Accumulator keeping track of total number of variables used. Needed to use different
     /// offsets for consecutive inlined function calls.
     acc: Option<u32>,
-    /// Stores the return variables of inlined function calls. Used to replace `$0` during
-    /// renaming.
-    returns: Vec<Local>,
     /// Maps a renamed local to its local declaration.
     local_decls: HashMap<Local, LocalDecl>
 }
@@ -405,7 +402,6 @@ impl VarRenamer {
             stack: vec![0],
             offset: 0,
             acc: None,
-            returns: Vec::new(),
             local_decls: HashMap::new()
         }
     }
@@ -435,14 +431,12 @@ impl VarRenamer {
             Some(v) => *v += num_locals as u32,
             None => {}
         }
-        self.returns.push(Local(self.offset));
     }
 
     fn leave(&mut self) {
         // When we leave an inlined function call, we pop the previous offset from the stack,
         // reverting the offset to what it was before the function was entered.
         self.stack.pop();
-        self.returns.pop();
         if let Some(v) = self.stack.last() {
             self.offset = *v;
         } else {
