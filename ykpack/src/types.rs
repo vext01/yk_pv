@@ -806,7 +806,7 @@ impl Constant {
         match self {
             Self::Int(ci) => ci.i64_cast(),
             Self::Bool(b) => *b as i64,
-            Self::Tuple(..) => 0, // FIXME tuple constants not really implemented.
+            Self::Tuple(..) => unreachable!(),
             Self::Unimplemented(_) => unreachable!(),
         }
     }
