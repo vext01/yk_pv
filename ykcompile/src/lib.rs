@@ -494,29 +494,9 @@ impl<TT> TraceCompiler<TT> {
     }
 
     /// Load an IPlace into the temporary register. Panic if it doesn't fit.
-    fn load_temp_reg(&mut self, ip: &IPlace) {
-        let loc = self.iplace_to_location(ip);
-        match loc {
-            Location::Register(r) => {
-                dynasm!(self.asm
-                    ; mov Rq(*TEMP_REG), Rq(r)
-                );
-            },
-            Location::Mem(ro) => {
-                match SIR.ty(&ip.ty()).size() {
-                    1 | 2 | 4 => todo!(),
-                    8 => {
-                        dynasm!(self.asm
-                            ; mov Rb(*TEMP_REG), BYTE [Rq(ro.reg) + ro.offs]
-                        );
-                    }
-                    _ => unreachable!("doesn't fit"),
-                }
-            },
-            Location::Const(..) => todo!(),
-            Location::Indirect(..) => todo!(),
-            Location::NotLive => unreachable!(),
-        }
+    fn load_temp_reg(&mut self, src_ip: &IPlace) {
+        let src_loc = self.iplace_to_location(src_ip);
+        self.store_raw(&*TEMP_LOC, &src_loc, SIR.ty(&src_ip.ty()).size());
     }
 
     fn c_binop(&mut self, dest: &IPlace, op: BinOp, opnd1: &IPlace, opnd2: &IPlace, checked: bool) {
@@ -669,6 +649,7 @@ impl<TT> TraceCompiler<TT> {
         //
         // FIXME avoid partial register stalls.
         // FIXME assumes constants fit in a register.
+        // FIXME this is massive. Move this (and store() to a new file).
 
         // This can happen due to ZSTs.
         if size == 0 {
@@ -1435,9 +1416,11 @@ mod tests {
         interp_step(&mut IO(()));
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         assert_tir(
             "...\n\
             ops:\n\
+              ...
               %a = call(add6, [1u64, 1u64, 1u64, 1u64, 1u64, 1u64])\n\
               ...
               dead(%a)\n\
@@ -1717,61 +1700,6 @@ mod tests {
         let mut args = IO(5, 2, 0);
         ct.execute(&mut args);
         assert_eq!(args, IO(5, 2, 10));
-    }
-
-    #[test]
-    fn field_projection_tir() {
-        struct IO(u64);
-
-        struct S {
-            _x: u64,
-            y: u64,
-        }
-
-        fn get_y(s: S) -> u64 {
-            s.y
-        }
-
-        #[interp_step]
-        fn interp_step(io: &mut IO) {
-            let s = S { _x: 100, y: 200 };
-            io.0 = get_y(s);
-        }
-
-        let mut inputs = IO(0);
-        let th = start_tracing(TracingKind::HardwareTracing);
-        interp_step(&mut inputs);
-        let sir_trace = th.stop_tracing().unwrap();
-        let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
-
-        // %s1: Initial s in the outer function
-        // %s2: A copy of s. Uninteresting.
-        // %s3: s inside the function.
-        // %res: the result of the call.
-        assert_tir("
-            local_decls:
-              ...
-              %s1: (%cgu, %tid1) => StructTy { offsets: [0, 8], tys: [(%cgu, %tid2), (%cgu, %tid2)], align: 8, size: 16 }
-              ...
-              %res: (%cgu, %tid2) => u64
-              ...
-              %s2: (%cgu, %tid1)...
-              ...
-              %s3: (%cgu, %tid1)...
-              ...
-            ops:
-              ...
-              (%s1).0 = 100u64
-              (%s1).1 = 200u64
-              ...
-              %s2 = %s1
-              ...
-              enter(...
-              ...
-              %res = (%s3).1
-              ...
-              leave
-              ...", &tir_trace);
     }
 
     #[test]
