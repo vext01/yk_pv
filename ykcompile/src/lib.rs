@@ -1095,8 +1095,6 @@ impl<TT> TraceCompiler<TT> {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
-            Statement::Enter(_) => {},
-            Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
             Statement::Call(target, args, dest) => self.c_call(target, args, dest)?,
             Statement::Nop => {}

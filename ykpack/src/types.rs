@@ -539,14 +539,10 @@ pub enum Statement {
     IStore(IPlace, IPlace),
     /// Binary operations. FIXME dest should be a local?
     BinaryOp{dest: IPlace, op: BinOp, opnd1: IPlace, opnd2: IPlace, checked: bool},
-    /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
-    Enter(CallOperand),
     /// Makes a reference.
     MkRef(IPlace, IPlace),
     // Dereferences a reference.
     //Deref(IPlace, IPlace),
-    /// Marks the exit of an inlined function call in a TIR trace. This does not appear in SIR.
-    Leave,
     /// Marks a local variable dead.
     /// Note that locals are implicitly live at first use.
     StorageDead(Local),
@@ -579,8 +575,6 @@ impl Statement {
             Statement::MkRef(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             //Statement::Deref(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
-            Statement::Enter(..) => (),
-            Statement::Leave => (),
             Statement::StorageDead(_) => (),
             Statement::Call(_target, _args, dest) => {
                 if let Some(dest) = dest {
@@ -616,8 +610,6 @@ impl Statement {
                 Self::maybe_push_local(&mut ret, dest.local());
                 Self::maybe_push_local(&mut ret, src.local());
             }
-            Statement::Enter(..) => (),
-            Statement::Leave => (),
             Statement::StorageDead(_) => (),
             Statement::Call(_target, args, dest) => {
                 if let Some(dest) = dest {
@@ -635,7 +627,7 @@ impl Statement {
     ///// Returns true if the statement may affect locals besides those appearing in the statement.
     pub fn may_have_side_effects(&self) -> bool {
         match self {
-            Statement::Call(..) | Statement::Enter(..) => true,
+            Statement::Call(..) => true,
             _ => false,
         }
     }
@@ -652,8 +644,6 @@ impl Display for Statement {
                 let c = if *checked { " (checked)" } else { "" };
                 write!(f, "{} = {} {} {}{}", dest, opnd1, op, opnd2, c)
             },
-            Statement::Enter(op) => write!(f, "enter({})", op),
-            Statement::Leave => write!(f, "leave"),
             Statement::StorageDead(local) => write!(f, "dead({})", local),
             Statement::Call(op, args, dest) => {
                 let args_s = args

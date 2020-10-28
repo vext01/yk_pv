@@ -153,9 +153,7 @@ impl<'a> TirTrace<'a> {
                         Statement::Debug(_) => stmt.clone(),
                         Statement::Unimplemented(_) => stmt.clone(),
                         // The following statements kinds are specific to TIR and cannot appear in SIR.
-                        Statement::Call(..) | Statement::Enter(..) | Statement::Leave => {
-                            unreachable!()
-                        }
+                        Statement::Call(..) => unreachable!(),
                     };
                     update_defined_locals(&op, ops.len());
                     ops.push(TirOp::Statement(op));
@@ -210,8 +208,7 @@ impl<'a> TirTrace<'a> {
                         // Rename all `Local`s within the arguments.
                         let newargs = rnm.rename_args(args, body);
                         if let Some(callbody) = sir.bodies.get(callee_sym) {
-                            // We have SIR for the callee, so it will appear inlined in the trace
-                            // and we only need to emit Enter/Leave statements.
+                            // We have SIR for the callee, so it will appear inlined in the trace.
 
                             // If the function has been annotated with do_not_trace, turn it into a
                             // call.
@@ -223,8 +220,7 @@ impl<'a> TirTrace<'a> {
                                 // number of variables assigned in the outer body.
                                 rnm.enter(callbody.local_decls.len(), ret_val.clone());
 
-                                // Enter and copy args in.
-                                term_stmts.push(Statement::Enter(op.clone()));
+                                // Copy args in.
                                 for (arg_idx, arg) in newargs.iter().enumerate() {
                                     let dest_local = rnm.rename_local(&Local(u32::try_from(arg_idx).unwrap() + 1), body);
                                     let dest_ip = IPlace::Val{local: dest_local, offs: 0, ty: arg.ty()};
@@ -257,10 +253,8 @@ impl<'a> TirTrace<'a> {
                     let src_ip = rnm.rename_iplace(&IPlace::Val{local: Local(0), offs: 0, ty: dest_ip.ty()}, body);
                     rnm.leave();
 
-                    //// Assign the return value and emit the leave statement.
-                    //let src_ip = IPlace::Val{local: Local(old_offs), offs: 0, ty: dest_ip.ty()};
+                    // Copy out the return value into the caller.
                     term_stmts.push(Statement::IStore(dest_ip, src_ip));
-                    term_stmts.push(Statement::Leave);
                 },
                 _ => (),
             }
