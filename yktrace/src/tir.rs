@@ -43,6 +43,8 @@ impl<'a> TirTrace<'a> {
         // Maps symbol names to their virtual addresses.
         let mut addr_map: HashMap<String, u64> = HashMap::new();
 
+        let mut return_iplaces: Vec<IPlace> = Vec::new();
+
         // As we compile, we are going to check the define-use (DU) chain of our local
         // variables. No local should be used without first being defined. If that happens it's
         // likely that the user used a variable from outside the scope of the trace without
@@ -81,7 +83,7 @@ impl<'a> TirTrace<'a> {
                     continue;
                 }
                 if !defined_locals.contains(&lcl) {
-                    panic!("undefined local: {}", lcl);
+                    panic!("undefined local: {} in {}", lcl, op);
                 }
                 last_use_sites.insert(lcl, op_idx);
             }
@@ -132,8 +134,9 @@ impl<'a> TirTrace<'a> {
                 // number of assigned variables in the functions outer context. For example, if a
                 // function `bar` is inlined into a function `foo`, and `foo` used 5 variables, then
                 // all variables in `bar` are offset by 5.
+                //println!("*** {}", body.blocks[user_bb_idx_usize]);
                 for stmt in body.blocks[user_bb_idx_usize].stmts.iter() {
-                    println!("stmt: {}", stmt);
+                    //println!("orig stmt: {}", stmt);
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
@@ -159,10 +162,16 @@ impl<'a> TirTrace<'a> {
 
                     // FIXME: Ignore writing to the return value in the outer interp_step function,
                     // as we know it returns unit and we can't yet lower constant tuple types.
-                    if body.flags & ykpack::bodyflags::INTERP_STEP != 0 && !op.maybe_defined_locals().contains(&Local(0)) {
+                    //if body.flags & ykpack::bodyflags::INTERP_STEP != 0 { //&& !op.maybe_defined_locals().contains(&Local(0)) {
+                        //println!("stmt: {}", op);
+                        //
+                    println!("---");
+                for o in &ops {
+                    println!("op: {}", o);
+                }
                         update_defined_locals(&op, ops.len());
                         ops.push(TirOp::Statement(op));
-                    }
+                    //}
                 }
             }
 
@@ -189,7 +198,9 @@ impl<'a> TirTrace<'a> {
                 continue;
             }
 
-            let stmt = match &body.blocks[user_bb_idx_usize].term {
+            // Each SIR terminator becomes zero or more TIR statements.
+            let mut term_stmts = Vec::new();
+            match &body.blocks[user_bb_idx_usize].term {
                 Terminator::Call {
                     operand: op,
                     args,
@@ -205,12 +216,13 @@ impl<'a> TirTrace<'a> {
                         .as_ref()
                         .map(|(ret_val, _)| rnm.rename_iplace(&ret_val, body))
                         .unwrap();
+                    return_iplaces.push(ret_val.clone());
 
                     if let Some(callee_sym) = op.symbol() {
                         // We know the symbol name of the callee at least.
                         // Rename all `Local`s within the arguments.
                         let newargs = rnm.rename_args(args, body);
-                        let op = if let Some(callbody) = sir.bodies.get(callee_sym) {
+                        if let Some(callbody) = sir.bodies.get(callee_sym) {
                             // We have SIR for the callee, so it will appear inlined in the trace
                             // and we only need to emit Enter/Leave statements.
 
@@ -218,36 +230,40 @@ impl<'a> TirTrace<'a> {
                             // call.
                             if callbody.flags & ykpack::bodyflags::DO_NOT_TRACE != 0 {
                                 ignore = Some(callee_sym.to_string());
-                                Statement::Call(op.clone(), newargs, Some(ret_val))
+                                term_stmts.push(Statement::Call(op.clone(), newargs, Some(ret_val)))
                             } else {
                                 // Inform VarRenamer about this function's offset, which is equal to the
                                 // number of variables assigned in the outer body.
                                 rnm.enter(callbody.local_decls.len(), ret_val.clone());
+                                term_stmts.push(Statement::Enter(op.clone(), newargs.clone(), Some(ret_val), rnm.offset()));
 
                                 // Ensure the callee's arguments get TIR local decls. This is required
                                 // because arguments are implicitly live at the start of each function,
                                 // and we usually instantiate local decls when we see a StorageLive.
                                 //
                                 // This must happen after rnm.enter() so that self.offset is up-to-date.
-                                for lidx in 0..newargs.len() {
-                                    let lidx = lidx + 1; // Skipping the return local.
-                                    let decl =
-                                        &callbody.local_decls[usize::try_from(lidx).unwrap()];
-                                    rnm.local_decls.insert(
-                                        Local(rnm.offset + u32::try_from(lidx).unwrap()),
-                                        decl.clone()
-                                    );
+                                //for lidx in 0..newargs.len() {
+                                //    let lidx = lidx + 1; // Skipping the return local.
+                                //    let decl =
+                                //        &callbody.local_decls[usize::try_from(lidx).unwrap()];
+                                //    rnm.local_decls.insert(
+                                //        Local(rnm.offset + u32::try_from(lidx).unwrap()),
+                                //        decl.clone()
+                                //    );
+                                //}
+                                //for lidx in 1..=newargs.len() {
+                                for (arg_idx, arg) in newargs.iter().enumerate() {
+                                    let dest_local = rnm.rename_local(&Local(u32::try_from(arg_idx).unwrap() + 1), body);
+                                    let dest_ip = IPlace::Val{local: dest_local, offs: 0, ty: arg.ty()};
+                                    term_stmts.push(Statement::IStore(dest_ip, arg.clone()));
                                 }
-
-                                Statement::Enter(op.clone(), newargs, Some(ret_val), rnm.offset())
                             }
                         } else {
                             // We have a symbol name but no SIR. Without SIR the callee can't
                             // appear inlined in the trace, so we should emit a native call to the
                             // symbol instead.
-                            Statement::Call(op.clone(), newargs, Some(ret_val))
-                        };
-                        Some(op)
+                            term_stmts.push(Statement::Call(op.clone(), newargs, Some(ret_val)))
+                        }
                     } else {
                         todo!("Unknown callee encountered");
                     }
@@ -263,12 +279,26 @@ impl<'a> TirTrace<'a> {
                     // statements for call arguments. Which mappings we need to remove depends on
                     // the number of arguments the function call had, which we keep track of in
                     // `cur_call_args`.
+                    //let old_offs = rnm.offset;
+                    let dest_ip = return_iplaces.pop().unwrap();
+                    let src_ip = rnm.rename_iplace(&IPlace::Val{local: Local(0), offs: 0, ty: dest_ip.ty()}, body);
                     rnm.leave();
-                    Some(Statement::Leave)
+
+                    //// Assign the return value and emit the leave statement.
+                    //let src_ip = IPlace::Val{local: Local(old_offs), offs: 0, ty: dest_ip.ty()};
+                    term_stmts.push(Statement::IStore(dest_ip, src_ip));
+                    term_stmts.push(Statement::Leave);
+                },
+                _ => (),
+            }
+
+            //if let Some(stmt) = stmt {
+            for stmt in term_stmts {
+                    println!("---");
+                for o in &ops {
+                    println!("op: {}", o);
                 }
-                _ => None
-            };
-            if let Some(stmt) = stmt {
+                println!("term: {}", stmt);
                 update_defined_locals(&stmt, ops.len());
                 ops.push(TirOp::Statement(stmt));
             }
@@ -320,6 +350,10 @@ impl<'a> TirTrace<'a> {
             };
 
             if guard.is_some() {
+                    println!("---");
+                for o in &ops {
+                    println!("op: {}", o);
+                }
                 ops.push(TirOp::Guard(guard.unwrap()));
             }
         }

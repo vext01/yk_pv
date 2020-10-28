@@ -580,13 +580,13 @@ impl Statement {
             //Statement::Deref(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::Enter(_target, args, dest, start_idx) => {
-                if let Some(dest) = dest {
-                    Self::maybe_push_local(&mut ret, dest.local());
-                }
-                for idx in 0..args.len() {
-                    // + 1 to skip return value.
-                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                }
+                //if let Some(dest) = dest {
+                //    Self::maybe_push_local(&mut ret, dest.local());
+                //}
+                //for idx in 0..args.len() {
+                //    // + 1 to skip return value.
+                //    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+                //}
             }
             Statement::Leave => (),
             Statement::StorageDead(_) => (),
@@ -625,16 +625,16 @@ impl Statement {
                 Self::maybe_push_local(&mut ret, src.local());
             }
             Statement::Enter(_target, args, dest, start_idx) => {
-                if let Some(dest) = dest {
-                    Self::maybe_push_local(&mut ret, dest.local());
-                }
-                for a in args {
-                    Self::maybe_push_local(&mut ret, a.local());
-                }
-                for idx in 0..args.len() {
-                    // + 1 to skip return value.
-                    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                }
+                //if let Some(dest) = dest {
+                //    Self::maybe_push_local(&mut ret, dest.local());
+                //}
+                //for a in args {
+                //    Self::maybe_push_local(&mut ret, a.local());
+                //}
+                //for idx in 0..args.len() {
+                //    // + 1 to skip return value.
+                //    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
+                //}
             }
             Statement::Leave => (),
             Statement::StorageDead(_) => (),
@@ -806,7 +806,7 @@ impl Constant {
         match self {
             Self::Int(ci) => ci.i64_cast(),
             Self::Bool(b) => *b as i64,
-            Self::Tuple(..) => unreachable!(),
+            Self::Tuple(..) => 0, // FIXME tuple constants not really implemented.
             Self::Unimplemented(_) => unreachable!(),
         }
     }

@@ -1286,6 +1286,7 @@ impl<TT> TraceCompiler<TT> {
                 // large constant tuples or u128 even.
                 let c_i64 = c_val.i64_cast();
                 match SIR.ty(&ty).size() {
+                    0 => (),
                     1 => {
                         dynasm!(self.asm
                             ; mov BYTE [Rq(ro.reg) + ro.offs], c_i64 as i8
