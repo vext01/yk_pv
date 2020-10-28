@@ -222,23 +222,9 @@ impl<'a> TirTrace<'a> {
                                 // Inform VarRenamer about this function's offset, which is equal to the
                                 // number of variables assigned in the outer body.
                                 rnm.enter(callbody.local_decls.len(), ret_val.clone());
-                                term_stmts.push(Statement::Enter(op.clone(), newargs.clone(), Some(ret_val), rnm.offset()));
 
-                                // Ensure the callee's arguments get TIR local decls. This is required
-                                // because arguments are implicitly live at the start of each function,
-                                // and we usually instantiate local decls when we see a StorageLive.
-                                //
-                                // This must happen after rnm.enter() so that self.offset is up-to-date.
-                                //for lidx in 0..newargs.len() {
-                                //    let lidx = lidx + 1; // Skipping the return local.
-                                //    let decl =
-                                //        &callbody.local_decls[usize::try_from(lidx).unwrap()];
-                                //    rnm.local_decls.insert(
-                                //        Local(rnm.offset + u32::try_from(lidx).unwrap()),
-                                //        decl.clone()
-                                //    );
-                                //}
-                                //for lidx in 1..=newargs.len() {
+                                // Enter and copy args in.
+                                term_stmts.push(Statement::Enter(op.clone()));
                                 for (arg_idx, arg) in newargs.iter().enumerate() {
                                     let dest_local = rnm.rename_local(&Local(u32::try_from(arg_idx).unwrap() + 1), body);
                                     let dest_ip = IPlace::Val{local: dest_local, offs: 0, ty: arg.ty()};

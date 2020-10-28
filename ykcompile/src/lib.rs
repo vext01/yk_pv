@@ -737,19 +737,19 @@ impl<TT> TraceCompiler<TT> {
     //}
 
     /// Compile the entry into an inlined function call.
-    fn c_enter(&mut self, args: &Vec<IPlace>, dest: &Option<IPlace>, off: u32) {
-        for (idx, src_ip) in args.iter().enumerate() {
-            let idx = u32::try_from(idx).unwrap();
-            let dest_ip = IPlace::Val{local: Local(idx + off + 1), offs: 0, ty: src_ip.ty()};
-            self.store(&dest_ip, &src_ip)
-        }
+    //fn c_enter(&mut self, args: &Vec<IPlace>, dest: &Option<IPlace>, off: u32) {
+    //    for (idx, src_ip) in args.iter().enumerate() {
+    //        let idx = u32::try_from(idx).unwrap();
+    //        let dest_ip = IPlace::Val{local: Local(idx + off + 1), offs: 0, ty: src_ip.ty()};
+    //        self.store(&dest_ip, &src_ip)
+    //    }
 
-        // Force register allocation of the return value (in case it it immediately marked dead).
-        // FIXME can remove this once we put back liveness optimisations in the TIR compiler?
-        if let Some(dest) = dest {
-            self.iplace_to_location(dest);
-        }
-    }
+    //    // Force register allocation of the return value (in case it it immediately marked dead).
+    //    // FIXME can remove this once we put back liveness optimisations in the TIR compiler?
+    //    if let Some(dest) = dest {
+    //        self.iplace_to_location(dest);
+    //    }
+    //}
 
     /// Push all of the caller-save registers to the stack.
     fn caller_save(&mut self) {
@@ -1095,7 +1095,7 @@ impl<TT> TraceCompiler<TT> {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
-            Statement::Enter(_, args, dest, off) => self.c_enter(args, dest, *off),
+            Statement::Enter(_) => {},
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
             Statement::Call(target, args, dest) => self.c_call(target, args, dest)?,

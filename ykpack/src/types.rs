@@ -540,7 +540,7 @@ pub enum Statement {
     /// Binary operations. FIXME dest should be a local?
     BinaryOp{dest: IPlace, op: BinOp, opnd1: IPlace, opnd2: IPlace, checked: bool},
     /// Marks the entry of an inlined function call in a TIR trace. This does not appear in SIR.
-    Enter(CallOperand, Vec<IPlace>, Option<IPlace>, u32),
+    Enter(CallOperand),
     /// Makes a reference.
     MkRef(IPlace, IPlace),
     // Dereferences a reference.
@@ -579,15 +579,7 @@ impl Statement {
             Statement::MkRef(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             //Statement::Deref(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
-            Statement::Enter(_target, args, dest, start_idx) => {
-                //if let Some(dest) = dest {
-                //    Self::maybe_push_local(&mut ret, dest.local());
-                //}
-                //for idx in 0..args.len() {
-                //    // + 1 to skip return value.
-                //    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                //}
-            }
+            Statement::Enter(..) => (),
             Statement::Leave => (),
             Statement::StorageDead(_) => (),
             Statement::Call(_target, _args, dest) => {
@@ -624,18 +616,7 @@ impl Statement {
                 Self::maybe_push_local(&mut ret, dest.local());
                 Self::maybe_push_local(&mut ret, src.local());
             }
-            Statement::Enter(_target, args, dest, start_idx) => {
-                //if let Some(dest) = dest {
-                //    Self::maybe_push_local(&mut ret, dest.local());
-                //}
-                //for a in args {
-                //    Self::maybe_push_local(&mut ret, a.local());
-                //}
-                //for idx in 0..args.len() {
-                //    // + 1 to skip return value.
-                //    ret.push(Local(start_idx + u32::try_from(idx).unwrap() + 1));
-                //}
-            }
+            Statement::Enter(..) => (),
             Statement::Leave => (),
             Statement::StorageDead(_) => (),
             Statement::Call(_target, args, dest) => {
@@ -671,19 +652,7 @@ impl Display for Statement {
                 let c = if *checked { " (checked)" } else { "" };
                 write!(f, "{} = {} {} {}{}", dest, opnd1, op, opnd2, c)
             },
-            Statement::Enter(op, args, dest, off) => {
-                let args_s = args
-                    .iter()
-                    .map(|a| format!("{}", a))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                let dest_s = if let Some(dest) = dest {
-                    format!("{}", dest)
-                } else {
-                    String::from("none")
-                };
-                write!(f, "{} = enter({}, [{}], {})", dest_s, op, args_s, off)
-            }
+            Statement::Enter(op) => write!(f, "enter({})", op),
             Statement::Leave => write!(f, "leave"),
             Statement::StorageDead(local) => write!(f, "dead({})", local),
             Statement::Call(op, args, dest) => {
