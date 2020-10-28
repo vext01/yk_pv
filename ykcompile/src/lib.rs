@@ -1091,7 +1091,6 @@ impl<TT> TraceCompiler<TT> {
 
     /// Compile a TIR statement.
     fn c_statement(&mut self, stmt: &Statement) -> Result<(), CompileError> {
-        println!("stmt: {}", stmt);
         match stmt {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
@@ -1166,6 +1165,12 @@ impl<TT> TraceCompiler<TT> {
         //
         // FIXME avoid partial register stalls.
         // FIXME assumes constants fit in a register.
+
+        // This can happen due to ZSTs.
+        if size == 0 {
+            return;
+        }
+
         match (&dest_loc, &src_loc) {
             (Location::Register(dest_reg), Location::Register(src_reg)) => {
                 dynasm!(self.asm
@@ -1174,7 +1179,6 @@ impl<TT> TraceCompiler<TT> {
             },
             (Location::Mem(dest_ro), Location::Register(src_reg)) => {
                 match size {
-                    0 => (), // ZST.
                     1 => {
                         dynasm!(self.asm
                             ; mov BYTE [Rq(dest_ro.reg) + dest_ro.offs], Rb(src_reg)
@@ -1203,7 +1207,6 @@ impl<TT> TraceCompiler<TT> {
                     debug_assert!(dest_ro.reg != *TEMP_REG);
                     debug_assert!(src_ro.reg != *TEMP_REG);
                     match size {
-                        0 => (), // ZST.
                         1 => {
                             dynasm!(self.asm
                                 ; mov Rb(*TEMP_REG), BYTE [Rq(src_ro.reg) + src_ro.offs]
@@ -1236,7 +1239,6 @@ impl<TT> TraceCompiler<TT> {
             }
             (Location::Register(dest_reg), Location::Mem(src_ro)) => {
                 match size {
-                    0 => (), // ZST.
                     1 => {
                         dynasm!(self.asm
                             ; mov Rb(dest_reg), BYTE [Rq(src_ro.reg) + src_ro.offs]
@@ -1286,7 +1288,6 @@ impl<TT> TraceCompiler<TT> {
                 // large constant tuples or u128 even.
                 let c_i64 = c_val.i64_cast();
                 match SIR.ty(&ty).size() {
-                    0 => (),
                     1 => {
                         dynasm!(self.asm
                             ; mov BYTE [Rq(ro.reg) + ro.offs], c_i64 as i8
@@ -1486,7 +1487,6 @@ impl<TT> TraceCompiler<TT> {
                     IndirectLoc::Mem(src_ro) => {
                         debug_assert!(src_ro.reg != *TEMP_REG);
                         match size {
-                            0 => (), // ZST.
                             8 => dynasm!(self.asm
                                 ; mov Rq(*TEMP_REG), QWORD  [Rq(src_ro.reg) + src_ro.offs]
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(*TEMP_REG) + *src_offs]
@@ -1513,7 +1513,6 @@ impl<TT> TraceCompiler<TT> {
                     IndirectLoc::Register(src_reg) => {
                         debug_assert!(*src_reg != *TEMP_REG);
                         match size {
-                            0 => (), // ZST.
                             8 => dynasm!(self.asm
                                 ; mov Rq(*TEMP_REG), QWORD [Rq(src_reg) + *src_offs]
                                 ; mov QWORD [Rq(dest_ro.reg) + dest_ro.offs], Rq(*TEMP_REG)
@@ -1530,7 +1529,6 @@ impl<TT> TraceCompiler<TT> {
                         IndirectLoc::Register(dest_reg) => {
                             debug_assert!(*dest_reg != *TEMP_REG);
                             match size {
-                                0 => (), // ZST.
                                 8 => dynasm!(self.asm
                                     ; mov Rq(*TEMP_REG), QWORD [Rq(src_ro.reg) + src_ro.offs]
                                     ; mov QWORD [Rq(dest_reg) + *dest_offs], Rq(*TEMP_REG)

@@ -134,9 +134,7 @@ impl<'a> TirTrace<'a> {
                 // number of assigned variables in the functions outer context. For example, if a
                 // function `bar` is inlined into a function `foo`, and `foo` used 5 variables, then
                 // all variables in `bar` are offset by 5.
-                //println!("*** {}", body.blocks[user_bb_idx_usize]);
                 for stmt in body.blocks[user_bb_idx_usize].stmts.iter() {
-                    //println!("orig stmt: {}", stmt);
                     let op = match stmt {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
@@ -159,19 +157,8 @@ impl<'a> TirTrace<'a> {
                             unreachable!()
                         }
                     };
-
-                    // FIXME: Ignore writing to the return value in the outer interp_step function,
-                    // as we know it returns unit and we can't yet lower constant tuple types.
-                    //if body.flags & ykpack::bodyflags::INTERP_STEP != 0 { //&& !op.maybe_defined_locals().contains(&Local(0)) {
-                        //println!("stmt: {}", op);
-                        //
-                    println!("---");
-                for o in &ops {
-                    println!("op: {}", o);
-                }
-                        update_defined_locals(&op, ops.len());
-                        ops.push(TirOp::Statement(op));
-                    //}
+                    update_defined_locals(&op, ops.len());
+                    ops.push(TirOp::Statement(op));
                 }
             }
 
@@ -292,13 +279,7 @@ impl<'a> TirTrace<'a> {
                 _ => (),
             }
 
-            //if let Some(stmt) = stmt {
             for stmt in term_stmts {
-                    println!("---");
-                for o in &ops {
-                    println!("op: {}", o);
-                }
-                println!("term: {}", stmt);
                 update_defined_locals(&stmt, ops.len());
                 ops.push(TirOp::Statement(stmt));
             }
@@ -350,10 +331,6 @@ impl<'a> TirTrace<'a> {
             };
 
             if guard.is_some() {
-                    println!("---");
-                for o in &ops {
-                    println!("op: {}", o);
-                }
                 ops.push(TirOp::Guard(guard.unwrap()));
             }
         }
@@ -490,101 +467,13 @@ impl VarRenamer {
             .collect()
     }
 
-    //fn rename_rvalue(&mut self, rvalue: &Rvalue, body: &ykpack::Body) -> Rvalue {
-    //    match rvalue {
-    //        Rvalue::Use(op) => {
-    //            let newop = self.rename_operand(op, body);
-    //            Rvalue::Use(newop)
-    //        }
-    //        Rvalue::BinaryOp(binop, op1, op2) => {
-    //            let newop1 = self.rename_operand(op1, body);
-    //            let newop2 = self.rename_operand(op2, body);
-    //            Rvalue::BinaryOp(binop.clone(), newop1, newop2)
-    //        }
-    //        Rvalue::CheckedBinaryOp(binop, op1, op2) => {
-    //            let newop1 = self.rename_operand(op1, body);
-    //            let newop2 = self.rename_operand(op2, body);
-    //            Rvalue::CheckedBinaryOp(binop.clone(), newop1, newop2)
-    //        }
-    //        Rvalue::Ref(place) => {
-    //            let newplace = self.rename_place(place, body);
-    //            Rvalue::Ref(newplace)
-    //        }
-    //        Rvalue::Len(place) => {
-    //            let newplace = self.rename_place(place, body);
-    //            Rvalue::Len(newplace)
-    //        }
-    //        Rvalue::Unimplemented(_) => rvalue.clone()
-    //    }
-    //}
-
-    //fn rename_operand(&mut self, operand: &Operand, body: &ykpack::Body) -> Operand {
-    //    match operand {
-    //        Operand::Place(p) => Operand::Place(self.rename_place(p, body)),
-    //        Operand::Constant(_) => operand.clone()
-    //    }
-    //}
-
-    //fn rename_place(&mut self, place: &Place, body: &ykpack::Body) -> Place {
-    //    let newproj = self.rename_projection(&place.projection, body);
-
-    //    if &place.local == &Local(0) {
-    //        // Replace the default return variable $0 with the variable in the outer context where
-    //        // the return value will end up after leaving the function. This saves us an
-    //        // instruction when we compile the trace.
-    //        let mut ret = if let Some(v) = self.returns.last() {
-    //            v.clone()
-    //        } else {
-    //            panic!("Expected return value!")
-    //        };
-
-    //        self.local_decls.insert(
-    //            ret.local,
-    //            body.local_decls[usize::try_from(place.local.0).unwrap()].clone()
-    //        );
-    //        ret.projection = newproj;
-    //        ret
-    //    } else {
-    //        let mut p = place.clone();
-    //        p.local = self.rename_local(&p.local, body);
-    //        p.projection = newproj;
-    //        p
-    //    }
-    //}
-
-    //fn rename_projection(
-    //    &mut self,
-    //    projection: &Vec<Projection>,
-    //    body: &ykpack::Body
-    //) -> Vec<Projection> {
-    //    let mut v = Vec::new();
-    //    for p in projection {
-    //        match p {
-    //            Projection::Index(local) => {
-    //                v.push(Projection::Index(self.rename_local(&local, body)))
-    //            }
-    //            _ => v.push(p.clone())
-    //        }
-    //    }
-    //    v
-    //}
-
     fn rename_local(&mut self, local: &Local, body: &ykpack::Body) -> Local {
-        //if *local == Local(0) {
-        //    dbg!(&self.returns.last());
-        //    if let Some(r) = self.returns.last() {
-        //        *r
-        //    } else {
-        //        Local(0)
-        //    }
-        //} else {
-            let renamed = Local(local.0 + self.offset);
-            self.local_decls.insert(
-                renamed.clone(),
-                body.local_decls[usize::try_from(local.0).unwrap()].clone()
-            );
-            renamed
-        //}
+        let renamed = Local(local.0 + self.offset);
+        self.local_decls.insert(
+            renamed.clone(),
+            body.local_decls[usize::try_from(local.0).unwrap()].clone()
+        );
+        renamed
     }
 }
 
