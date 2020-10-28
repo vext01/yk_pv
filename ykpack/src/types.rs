@@ -611,7 +611,7 @@ impl Statement {
         match self {
             Statement::Nop => (),
             Statement::Debug(_) => (),
-            Statement::MkRef(dest, src) => { //| Statement::Deref(dest, src) => {
+            Statement::MkRef(dest, src) => {
                 Self::maybe_push_local(&mut ret, dest.local());
                 Self::maybe_push_local(&mut ret, src.local());
             }
@@ -682,7 +682,7 @@ impl Display for Statement {
                 } else {
                     String::from("none")
                 };
-                write!(f, "enter({}, [{}], {}, {})", op, args_s, dest_s, off)
+                write!(f, "{} = enter({}, [{}], {})", dest_s, op, args_s, off)
             }
             Statement::Leave => write!(f, "leave"),
             Statement::StorageDead(local) => write!(f, "dead({})", local),

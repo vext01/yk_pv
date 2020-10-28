@@ -577,8 +577,7 @@ impl<TT> TraceCompiler<TT> {
     /// Notifies the register allocator that the register allocated to `local` may now be re-used.
     fn free_register(&mut self, local: &Local) -> Result<(), CompileError> {
         match self.variable_location_map.get(local) {
-            Some(Location::Register(reg)) => { //| Some(Location::Addr(reg)) => {
-                //debug_assert!(!is_temp_reg(*reg));
+            Some(Location::Register(reg)) => {
                 // If this local is currently stored in a register, free it.
                 self.register_content_map.insert(*reg, RegAlloc::Free);
             }
@@ -586,7 +585,6 @@ impl<TT> TraceCompiler<TT> {
             Some(Location::NotLive) => unreachable!(),
             Some(Location::Const(..)) => unreachable!(),
             None => {
-                dbg!(self.variable_location_map.get(local));
                 unreachable!("freeing unallocated register");
             },
         }
@@ -739,12 +737,17 @@ impl<TT> TraceCompiler<TT> {
     //}
 
     /// Compile the entry into an inlined function call.
-    fn c_enter(&mut self, args: &Vec<IPlace>, off: u32) {
+    fn c_enter(&mut self, args: &Vec<IPlace>, dest: &Option<IPlace>, off: u32) {
         for (idx, src_ip) in args.iter().enumerate() {
             let idx = u32::try_from(idx).unwrap();
             let dest_ip = IPlace::Val{local: Local(idx + off + 1), offs: 0, ty: src_ip.ty()};
-            dbg!(&dest_ip, &src_ip);
             self.store(&dest_ip, &src_ip)
+        }
+
+        // Force register allocation of the return value (in case it it immediately marked dead).
+        // FIXME can remove this once we put back liveness optimisations in the TIR compiler?
+        if let Some(dest) = dest {
+            self.iplace_to_location(dest);
         }
     }
 
@@ -1093,7 +1096,7 @@ impl<TT> TraceCompiler<TT> {
             Statement::IStore(dest, src) => self.c_istore(dest, src),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => self.c_binop(dest, *op, opnd1, opnd2, *checked),
             Statement::MkRef(dest, src) => self.c_mkref(dest, src),
-            Statement::Enter(_, args, _dest, off) => self.c_enter(args, *off),
+            Statement::Enter(_, args, dest, off) => self.c_enter(args, dest, *off),
             Statement::Leave => {}
             Statement::StorageDead(l) => self.free_register(l)?,
             Statement::Call(target, args, dest) => self.c_call(target, args, dest)?,
@@ -1859,6 +1862,7 @@ mod tests {
         fcall(&mut io);
         let sir_trace = th.stop_tracing().unwrap();
         let tir_trace = TirTrace::new(&*SIR, &*sir_trace).unwrap();
+        println!("{}", tir_trace);
         let ct = TraceCompiler::<IO>::compile(tir_trace);
         let mut args = IO(0);
         ct.execute(&mut args);
