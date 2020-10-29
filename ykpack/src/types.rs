@@ -464,13 +464,32 @@ impl Display for BasicBlock {
     }
 }
 
+/// Represents a pointer to be dereferenced at runtime.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct DerefBase {
+    pub local: Local,
+    pub offs: u32,
+}
+
+impl Display for DerefBase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}+{}", self.local, self.offs)
+    }
+}
+
 /// An IR place. This is used in SIR and TIR to describe the address of a piece of data.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum IPlace {
     /// The IPlace describes a value as a Local+offset pair.
     Val{local: Local, offs: u32, ty: TypeId},
     /// A dereferenced IPlace. When we store to this, we have to go through a pointer.
-    Deref{local: Local, offs: u32, post_offs: i32, ty: TypeId},
+    Deref{
+        /// The pointer to be dereferenced at runtime.
+        base: DerefBase,
+        /// Any offsetting that needs to occur *after* the base has been dereferenced.
+        /// Not to be confused with the `offs` field of the base.
+        post_offs: i32, ty: TypeId
+    },
     /// The IPlace describes a constant.
     Const{val: Constant, ty: TypeId},
     /// A construct which we have no lowering for yet.
@@ -487,13 +506,7 @@ impl Display for IPlace {
                     write!(f, "{}", local)
                 }
             },
-            Self::Deref{local, offs, post_offs, ty: _ty} => {
-                if *offs != 0 {
-                    write!(f, "*(${}+{})+{}", local.0, offs, post_offs)
-                } else {
-                    write!(f, "*(${})+{}", local.0, post_offs)
-                }
-            },
+            Self::Deref{base, post_offs, ty: _ty} => write!(f, "*(${})+{}", base, post_offs),
             Self::Const{val, ty: _ty} => write!(f, "{}", val),
             Self::Unimplemented(c) => write!(f, "{}", c),
         }
@@ -503,7 +516,7 @@ impl Display for IPlace {
 impl IPlace {
     pub fn local(&self) -> Option<Local> {
         match self {
-            Self::Val{local, ..} | Self::Deref{local, ..} => Some(*local),
+            Self::Val{local, ..} | Self::Deref{base: DerefBase{local, ..}, ..} => Some(*local),
             Self::Const{..} => None,
             Self::Unimplemented(_) => None,
         }
@@ -519,7 +532,10 @@ impl IPlace {
 
     pub fn deref(&self) -> IPlace {
         match self {
-            Self::Val{local, offs, ty} => IPlace::Deref{local: *local, offs: *offs, post_offs: 0, ty: *ty},
+            Self::Val{local, offs, ty} => {
+                let base = DerefBase{local:*local, offs: *offs};
+                IPlace::Deref{base, post_offs: 0, ty: *ty}
+            },
             Self::Const{..} => todo!(),
             Self::Deref{..} => unreachable!(),
             Self::Unimplemented(_) => unreachable!(),
@@ -541,8 +557,6 @@ pub enum Statement {
     BinaryOp{dest: IPlace, op: BinOp, opnd1: IPlace, opnd2: IPlace, checked: bool},
     /// Makes a reference.
     MkRef(IPlace, IPlace),
-    // Dereferences a reference.
-    //Deref(IPlace, IPlace),
     /// Marks a local variable dead.
     /// Note that locals are implicitly live at first use.
     StorageDead(Local),
@@ -573,7 +587,6 @@ impl Statement {
             Statement::Nop => (),
             Statement::IStore(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::MkRef(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
-            //Statement::Deref(dest, _src) => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::BinaryOp{dest, ..} => Self::maybe_push_local(&mut ret, dest.local()),
             Statement::StorageDead(_) => (),
             Statement::Call(_target, _args, dest) => {
@@ -638,7 +651,6 @@ impl Display for Statement {
         match self {
             Statement::Nop => write!(f, "nop"),
             Statement::MkRef(l, r) => write!(f, "{} = &({})", l, r),
-            //Statement::Deref(l, r) => write!(f, "{} = *({})", l, r),
             Statement::IStore(l, r) => write!(f, "{} = {}", l, r),
             Statement::BinaryOp{dest, op, opnd1, opnd2, checked} => {
                 let c = if *checked { " (checked)" } else { "" };

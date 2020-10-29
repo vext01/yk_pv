@@ -218,6 +218,7 @@ impl<TT> TraceCompiler<TT> {
     }
 
     fn iplace_to_location(&mut self, ip: &IPlace) -> Location {
+        dbg!(&ip);
         let ret = match ip {
             IPlace::Val{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
@@ -238,14 +239,14 @@ impl<TT> TraceCompiler<TT> {
                 }
                 loc
             },
-            IPlace::Deref{local, offs, post_offs, ..} => {
-                let mut loc = self.local_to_location(*local);
+            IPlace::Deref{base, post_offs, ..} => {
+                let mut loc = self.local_to_location(base.local);
 
                 // FIXME make a method on location and dedup.
-                if *offs != 0 {
+                if base.offs != 0 {
                     match &mut loc {
                         Location::Register(..) => todo!("offsetting something in a register"),
-                        Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
+                        Location::Mem(ro) => ro.offs += i32::try_from(base.offs).unwrap(),
                         Location::Const(..) => todo!("offsetting a constant"),
                         Location::Indirect(..) => todo!(),
                         Location::NotLive => unreachable!(),

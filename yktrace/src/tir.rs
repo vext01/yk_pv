@@ -17,7 +17,7 @@ use std::{
 };
 pub use ykpack::{
     BinOp, CallOperand, Constant, ConstantInt, IPlace, Local, LocalDecl, LocalIndex, Operand,
-    Place, PlaceBase, Projection, Rvalue, SignedInt, Statement, Terminator, UnsignedInt
+    Place, PlaceBase, Projection, Rvalue, SignedInt, Statement, Terminator, UnsignedInt, DerefBase
 };
 
 /// A TIR trace is conceptually a straight-line path through the SIR with guarded speculation.
@@ -139,7 +139,6 @@ impl<'a> TirTrace<'a> {
                         // StorageDead can't appear in SIR, only TIR.
                         Statement::StorageDead(_) => unreachable!(),
                         Statement::MkRef(dest, src) => Statement::MkRef(rnm.rename_iplace(dest, body), rnm.rename_iplace(src, body)),
-                        //Statement::Deref(dest, src) => Statement::Deref(rnm.rename_iplace(dest, body), rnm.rename_iplace(src, body)),
                         Statement::IStore(dest, src) => Statement::IStore(rnm.rename_iplace(dest, body), rnm.rename_iplace(src, body)),
                         Statement::BinaryOp{dest, op, opnd1, opnd2, checked} =>
                             Statement::BinaryOp{
@@ -428,8 +427,8 @@ impl VarRenamer {
         match ip {
             IPlace::Val{local, offs, ty} =>
                 IPlace::Val{local: self.rename_local(local, body), offs: *offs, ty: *ty},
-            IPlace::Deref{local, offs, post_offs, ty} =>
-                IPlace::Deref{local: self.rename_local(local, body), offs: *offs, post_offs: *post_offs, ty: *ty},
+            IPlace::Deref{base, post_offs, ty} =>
+                IPlace::Deref{base: DerefBase{ local: self.rename_local(&base.local, body), offs: base.offs}, post_offs: *post_offs, ty: *ty},
             IPlace::Const{..} => ip.clone(),
             IPlace::Unimplemented(..) => ip.clone(),
         }
