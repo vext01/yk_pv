@@ -165,6 +165,19 @@ impl Location {
             Location::NotLive => unreachable!(),
         }
     }
+
+    /// Apply an offset to the location.
+    fn offset(&mut self, offs: u32) {
+        if offs != 0 {
+            match self {
+                Location::Register(..) => todo!("offsetting something in a register"),
+                Location::Mem(ro) => ro.offs += i32::try_from(offs).unwrap(),
+                Location::Const(..) => todo!("offsetting a constant"),
+                Location::Indirect(..) => todo!(),
+                Location::NotLive => unreachable!(),
+            }
+        }
+    }
 }
 
 /// Allocation of one of the LOCAL_REGS. Temporary registers are tracked separately.
@@ -222,36 +235,12 @@ impl<TT> TraceCompiler<TT> {
         let ret = match ip {
             IPlace::Val{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
-
-                // FIXME make a method on location and dedup.
-                if *offs != 0 {
-                    match &mut loc {
-                        Location::Register(..) => {
-                            // FIXME make it so that the "something" is allocated on the stack.
-                            // Can we do this statically in the compiler?
-                            todo!("offsetting something in a register");
-                        },
-                        Location::Mem(ro) => ro.offs += i32::try_from(*offs).unwrap(),
-                        Location::Const(..) => todo!("offsetting a constant"),
-                        Location::Indirect(..) => todo!(),
-                        Location::NotLive => unreachable!(),
-                    }
-                }
+                loc.offset(*offs);
                 loc
             },
             IPlace::Deref{base, post_offs, ..} => {
                 let mut loc = self.local_to_location(base.local);
-
-                // FIXME make a method on location and dedup.
-                if base.offs != 0 {
-                    match &mut loc {
-                        Location::Register(..) => todo!("offsetting something in a register"),
-                        Location::Mem(ro) => ro.offs += i32::try_from(base.offs).unwrap(),
-                        Location::Const(..) => todo!("offsetting a constant"),
-                        Location::Indirect(..) => todo!(),
-                        Location::NotLive => unreachable!(),
-                    }
-                }
+                loc.offset(base.offs);
 
                 let ind_loc = match loc {
                     Location::Register(r) => IndirectLoc::Register(r),
