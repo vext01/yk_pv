@@ -211,6 +211,7 @@ pub struct TraceCompiler<TT> {
     local_decls: HashMap<Local, LocalDecl>,
     /// Stack builder for allocating objects on the stack.
     stack_builder: StackBuilder,
+    /// Stores the memory addresses of local functions.
     addr_map: HashMap<String, u64>,
     _pd: PhantomData<TT>,
 }
