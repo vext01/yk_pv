@@ -167,16 +167,26 @@ impl Location {
     }
 
     /// Apply an offset to the location.
-    fn offset(&mut self, offs: u32) {
+    fn offset(&mut self, offs: i32) {
         if offs != 0 {
             match self {
                 Location::Register(..) => todo!("offsetting something in a register"),
-                Location::Mem(ro) => ro.offs += i32::try_from(offs).unwrap(),
+                Location::Mem(ro) => ro.offs += offs,
                 Location::Const(..) => todo!("offsetting a constant"),
-                Location::Indirect(..) => todo!(),
+                Location::Indirect(_, post_offs) => *post_offs += offs,
                 Location::NotLive => unreachable!(),
             }
         }
+    }
+
+    /// Converts a direct place to an indirect place for use as a pointer.
+    fn to_indirect(&self) -> Self {
+        let ind_loc = match self {
+            Location::Register(r) => IndirectLoc::Register(*r),
+            Location::Mem(ro) => IndirectLoc::Mem(ro.clone()),
+            _ => unreachable!(),
+        };
+        Location::Indirect(ind_loc, 0)
     }
 }
 
@@ -235,19 +245,15 @@ impl<TT> TraceCompiler<TT> {
         let ret = match ip {
             IPlace::Val{local, offs, ty} => {
                 let mut loc = self.local_to_location(*local);
-                loc.offset(*offs);
+                loc.offset(i32::try_from(*offs).unwrap());
                 loc
             },
             IPlace::Deref{base, post_offs, ..} => {
                 let mut loc = self.local_to_location(base.local);
-                loc.offset(base.offs);
-
-                let ind_loc = match loc {
-                    Location::Register(r) => IndirectLoc::Register(r),
-                    Location::Mem(ro) => IndirectLoc::Mem(ro),
-                    _ => unreachable!(),
-                };
-                Location::Indirect(ind_loc, *post_offs)
+                loc.offset(i32::try_from(base.offs).unwrap());
+                loc = loc.to_indirect();
+                loc.offset(*post_offs);
+                loc
             },
             IPlace::Const{val, ty} => Location::Const(val.clone(), *ty),
             _ => todo!(),
