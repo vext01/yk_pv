@@ -211,6 +211,7 @@ pub struct TraceCompiler<TT> {
     local_decls: HashMap<Local, LocalDecl>,
     /// Stack builder for allocating objects on the stack.
     stack_builder: StackBuilder,
+    addr_map: HashMap<String, u64>,
     _pd: PhantomData<TT>,
 }
 
@@ -469,7 +470,11 @@ impl<TT> TraceCompiler<TT> {
            }
        }
 
-       let sym_addr = TraceCompiler::<TT>::find_symbol(sym)? as i64;
+       let sym_addr = if let Some(addr) = self.addr_map.get(sym) {
+           *addr as i64
+       } else {
+           TraceCompiler::<TT>::find_symbol(sym)? as i64
+       };
        dynasm!(self.asm
            // In Sys-V ABI, `al` is a hidden argument used to specify the number of vector args
            // for a vararg call. We don't support this right now, so set it to zero.
@@ -1162,6 +1167,7 @@ impl<TT> TraceCompiler<TT> {
             variable_location_map: HashMap::new(),
             local_decls: tt.local_decls.clone(),
             stack_builder: StackBuilder::default(),
+            addr_map: tt.addr_map.drain().into_iter().collect(),
             _pd: PhantomData,
         };
 
@@ -1272,6 +1278,7 @@ mod tests {
             variable_location_map: HashMap::new(),
             local_decls: HashMap::default(),
             stack_builder: StackBuilder::default(),
+            addr_map: HashMap::new(),
             _pd: PhantomData,
         };
 
@@ -1299,6 +1306,7 @@ mod tests {
             variable_location_map: HashMap::new(),
             local_decls,
             stack_builder: StackBuilder::default(),
+            addr_map: HashMap::new(),
             _pd: PhantomData,
         };
 
