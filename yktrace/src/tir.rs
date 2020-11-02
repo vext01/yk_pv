@@ -503,13 +503,12 @@ impl Guard {
     }
 
     pub fn used_locals(&self) -> Vec<Local> {
-        todo!();
-        // let mut ret = Vec::new();
-        // match &self.val {
-        //     Operand::Place(place) => ret.push(place.local),
-        //     Operand::Constant(_) => {}
-        // }
-        // ret
+        let mut ret = Vec::new();
+        match &self.val {
+            IPlace::Val { local, offs, ty } => ret.push(*local),
+            _ => {}
+        }
+        ret
     }
 }
 

@@ -23,7 +23,7 @@ use std::mem;
 use std::process::Command;
 use ykpack::{SignedIntTy, Ty, TypeId, UnsignedIntTy, IPlace};
 use yktrace::tir::{
-    BinOp, CallOperand, Constant, Guard, Local,
+    BinOp, CallOperand, Constant, Guard, GuardKind, Local,
     Statement, TirOp, TirTrace
 };
 use yktrace::{sir::SIR, INTERP_STEP_ARG};
@@ -1116,44 +1116,39 @@ impl<TT> TraceCompiler<TT> {
 
     /// Compile a guard in the trace, emitting code to abort execution in case the guard fails.
     fn c_guard(&mut self, guard: &Guard) {
-        todo!();
-        // match guard {
-        //     Guard {
-        //         val: Operand::Place(p),
-        //         kind: GuardKind::OtherInteger(v),
-        //     } => {
-        //         let (loc, ty) = self.place_to_location(&p, false);
-        //         match loc {
-        //             Location::Register(reg) => {
-        //                 for c in v {
-        //                     self.cmp_reg_const(reg, *c, ty.size());
-        //                     dynasm!(self.asm
-        //                         ; je ->guardfail
-        //                     );
-        //                 }
-        //             }
-        //             _ => todo!(),
-        //         }
-        //         self.free_if_temp(loc);
-        //     }
-        //     Guard {
-        //         val: Operand::Place(p),
-        //         kind: GuardKind::Integer(c),
-        //     } => {
-        //         let (loc, ty) = self.place_to_location(&p, false);
-        //         match loc {
-        //             Location::Register(reg) => {
-        //                 self.cmp_reg_const(reg, *c, ty.size());
-        //                 dynasm!(self.asm
-        //                     ; jne ->guardfail
-        //                 );
-        //             }
-        //             _ => todo!(),
-        //         }
-        //         self.free_if_temp(loc);
-        //     }
-        //     _ => todo!(),
-        // }
+        match guard {
+            Guard {
+                val,
+                kind: GuardKind::OtherInteger(v),
+            } => {
+                match self.iplace_to_location(val) {
+                    Location::Register(reg) => {
+                        for c in v {
+                            self.cmp_reg_const(reg, *c, SIR.ty(&val.ty()).size());
+                            dynasm!(self.asm
+                                ; je ->guardfail
+                            );
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Guard {
+                val,
+                kind: GuardKind::Integer(c),
+            } => {
+                match self.iplace_to_location(val) {
+                    Location::Register(reg) => {
+                        self.cmp_reg_const(reg, *c, SIR.ty(&val.ty()).size());
+                        dynasm!(self.asm
+                            ; jne ->guardfail
+                        );
+                    }
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        }
     }
 
     fn cmp_reg_const(&mut self, reg: u8, c: u128, size: u64) {
