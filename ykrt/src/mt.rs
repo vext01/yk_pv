@@ -546,4 +546,65 @@ mod tests {
             assert!(ptr::eq(Arc::as_ptr(&l.inner), Arc::as_ptr(&c4.inner)));
         }
     }
+
+    #[test]
+    fn interp_guard_fail() {
+        let mut mtt = MTBuilder::new().hot_threshold(2).init();
+
+        // The program is silly. Do nothing twice, then start again.
+        const NOP: u8 = 0;
+        const RESTART_IF_VAR_NOT_ZERO: u8 = 1;
+        const DECREMENT_VAR: u8 = 2;
+        const DONE: u8 = 3;
+        let prog = vec![DECREMENT_VAR, NOP, RESTART_IF_VAR_NOT_ZERO, NOP, DONE];
+
+        // Suppose the bytecode compiler for this imaginary language knows that the first bytecode
+        // is the only place a loop can start.
+        let locs = vec![Some(Location::new()), None, None];
+
+        struct IO {
+            prog: Vec<u8>,
+            pc: usize,
+            the_var: usize,
+        }
+
+        // We can't compile println! or dbg!.
+        #[do_not_trace]
+        fn print_pc(pc: usize) {
+            dbg!(pc);
+        }
+
+        #[interp_step]
+        fn dumb_interp_step(tio: &mut IO) {
+            print_pc(tio.pc);
+            match tio.prog[tio.pc] {
+                NOP => tio.pc += 1,
+                RESTART_IF_VAR_NOT_ZERO => {
+                    if tio.the_var != 0 {
+                        tio.pc = 0;
+                    } else {
+                        tio.pc += 1;
+                    }
+                }
+                DECREMENT_VAR => {
+                    tio.the_var -= 1;
+                    tio.pc += 1;
+                }
+                DONE => panic!("done"),
+                _ => unreachable!(),
+            }
+        }
+
+        let mut tio = IO {
+            prog,
+            pc: 0,
+            the_var: 5,
+        };
+
+        // The interpreter loop.
+        loop {
+            let loc = locs[tio.pc].as_ref();
+            mtt.control_point(loc, dumb_interp_step, &mut tio);
+        }
+    }
 }
