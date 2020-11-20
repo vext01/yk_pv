@@ -7,6 +7,8 @@ use std::{
     mem,
 };
 
+CARNAGE!
+
 // FIXME these should probably all be tuple structs, as type aliases offer little type safety.
 pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
