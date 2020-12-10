@@ -11,6 +11,7 @@ use std::{
     fs::File,
     io::{Cursor, Seek, SeekFrom},
     iter::Iterator,
+    lazy::SyncOnceCell,
     sync::{Arc, RwLock}
 };
 use ykpack::{self, Body, BodyFlags, CguHash, Decoder, Pack, SirHeader, SirOffset, Ty};
@@ -36,9 +37,9 @@ pub struct Sir<'m> {
     /// Section cache to avoid expensive `object::File::section_by_name()` calls.
     sec_cache: FxHashMap<String, &'m [u8]>,
     /// Body cache, to avoid repeated decodings.
-    body_cache: RwLock<FxHashMap<String, Option<Arc<Body>>>>,
+    body_cache: FxHashMap<String, SyncOnceCell<Body>>,
     /// Type cache, to avoid repeated decodings.
-    ty_cache: RwLock<FxHashMap<ykpack::TypeId, Arc<Ty>>>
+    ty_cache: FxHashMap<ykpack::TypeId, SyncOnceCell<Ty>>
 }
 
 impl<'m> Sir<'m> {
@@ -46,6 +47,8 @@ impl<'m> Sir<'m> {
         // SAFETY: Not really, we hope that nobody changes the file underneath our feet.
         let mut hdrs = FxHashMap::default();
         let mut sec_cache = FxHashMap::default();
+        let mut body_cache = FxHashMap::default();
+        let mut ty_cache = FxHashMap::default();
         let exe_obj = object::File::parse(&*mmap).unwrap();
         for sec in exe_obj.sections() {
             let sec_name = sec.name().unwrap();
@@ -59,16 +62,27 @@ impl<'m> Sir<'m> {
                 } else {
                     panic!("missing sir header");
                 };
+
+                // Pre-fill caches such that any query is initially a cache miss.
+                for sym in hdr.bodies.keys() {
+                    body_cache.insert(sym.to_owned(), SyncOnceCell::new());
+                }
+                for idx in 0..(hdr.types.len()) {
+                    let idx = u32::try_from(idx).unwrap();
+                    ty_cache.insert((hdr.cgu_hash, idx), SyncOnceCell::new());
+                }
+
                 let hdr_size = usize::try_from(curs.seek(SeekFrom::Current(0)).unwrap()).unwrap();
                 hdrs.insert(hdr.cgu_hash, (sec_name.to_owned(), hdr, hdr_size));
             }
         }
+
         Ok(Self {
             hdrs,
             exe_obj,
             sec_cache,
-            body_cache: Default::default(),
-            ty_cache: Default::default()
+            body_cache,
+            ty_cache
         })
     }
 
@@ -90,24 +104,16 @@ impl<'m> Sir<'m> {
     }
 
     /// Get the type data for the given type ID.
-    pub fn ty(&self, tyid: &ykpack::TypeId) -> Arc<ykpack::Ty> {
-        {
-            let rd = self.ty_cache.read().unwrap();
-            if let Some(ty) = rd.get(tyid) {
-                // Cache hit, return a reference to the previously decoded body.
-                return ty.clone();
-            }
-        } // Drop the RwLock's read() to prevent deadlocking.
+    pub fn ty(&self, tyid: &ykpack::TypeId) -> &ykpack::Ty {
+        let entry = self.ty_cache.get(tyid).unwrap();
 
-        // Cache miss. Decode the type and update the cache.
-        let (cgu, tidx) = tyid;
-        let (ref sec_name, ref hdr, hdr_size) = SIR.hdrs[cgu];
-        let off = hdr.types[usize::try_from(*tidx).unwrap()];
-        let ty = self.decode_ty(sec_name, hdr_size + off);
-        let mut wr = self.ty_cache.write().unwrap();
-        let arc = Arc::new(ty);
-        wr.insert(tyid.to_owned(), arc.clone());
-        arc
+        entry.get_or_init(|| {
+            // Cache miss. Decode the type and update the cache.
+            let (cgu, tidx) = tyid;
+            let (ref sec_name, ref hdr, hdr_size) = SIR.hdrs[cgu];
+            let off = hdr.types[usize::try_from(*tidx).unwrap()];
+            self.decode_ty(sec_name, hdr_size + off)
+        })
     }
 
     /// Decode a body in a named section, at an absolute offset from the beginning of that section.
@@ -125,32 +131,19 @@ impl<'m> Sir<'m> {
 
     /// Get the body data for the given symbol name.
     /// Returns None if not found.
-    pub fn body(&self, body_sym: &str) -> Option<Arc<Body>> {
-        {
-            let rd = self.body_cache.read().unwrap();
-            if let Some(body) = rd.get(body_sym) {
-                // Cache hit, return a reference to the previously decoded body.
-                return body.clone();
+    pub fn body(&self, body_sym: &str) -> Option<&Body> {
+        let entry = &self.body_cache.get(body_sym)?;
+        let ret = entry.get_or_init(|| {
+            // Cache miss. Decode the body and update the cache.
+            for (sec_name, hdr, hdr_size) in SIR.hdrs.values() {
+                if let Some(off) = hdr.bodies.get(body_sym) {
+                    let body = self.decode_body(sec_name, hdr_size + off);
+                    return body;
+                }
             }
-        } // Drop the RwLock's read() to prevent deadlocking.
-
-        // Cache miss. Decode the body and update the cache.
-        for (sec_name, hdr, hdr_size) in SIR.hdrs.values() {
-            if let Some(off) = hdr.bodies.get(body_sym) {
-                let body = self.decode_body(sec_name, hdr_size + off);
-                let mut wr = self.body_cache.write().unwrap();
-                let arc = Arc::new(body);
-                wr.insert(body_sym.to_owned(), Some(arc.clone()));
-                return Some(arc);
-            }
-        }
-
-        // The body is absent. Update the cache with a `None` to prevent repeated searches.
-        self.body_cache
-            .write()
-            .unwrap()
-            .insert(body_sym.to_owned(), None);
-        None
+            unreachable!();
+        });
+        Some(ret)
     }
 }
 
