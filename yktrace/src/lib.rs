@@ -2,6 +2,7 @@
 #![feature(thread_local)]
 #![feature(core_intrinsics)]
 #![feature(global_asm)]
+#![feature(once_cell)]
 
 extern crate test;
 

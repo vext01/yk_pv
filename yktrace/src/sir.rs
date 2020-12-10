@@ -1,5 +1,6 @@
 //! Loading and tracing of Serialised Intermediate Representation (SIR).
 
+use dashmap::DashMap;
 use fallible_iterator::FallibleIterator;
 use fxhash::FxHashMap;
 use memmap::Mmap;
@@ -11,6 +12,7 @@ use std::{
     fs::File,
     io::{Cursor, Seek, SeekFrom},
     iter::Iterator,
+    lazy::SyncOnceCell,
     sync::{Arc, RwLock}
 };
 use ykpack::{self, Body, BodyFlags, CguHash, Decoder, Pack, SirHeader, SirOffset, Ty};
@@ -36,7 +38,7 @@ pub struct Sir<'m> {
     /// Section cache to avoid expensive `object::File::section_by_name()` calls.
     sec_cache: FxHashMap<String, &'m [u8]>,
     /// Body cache, to avoid repeated decodings.
-    body_cache: RwLock<FxHashMap<String, Option<Arc<Body>>>>,
+    body_cache: DashMap<String, SyncOnceCell<Body>, fxhash::FxBuildHasher>,
     /// Type cache, to avoid repeated decodings.
     ty_cache: RwLock<FxHashMap<ykpack::TypeId, Arc<Ty>>>
 }
@@ -125,31 +127,28 @@ impl<'m> Sir<'m> {
 
     /// Get the body data for the given symbol name.
     /// Returns None if not found.
-    pub fn body(&self, body_sym: &str) -> Option<Arc<Body>> {
-        {
-            let rd = self.body_cache.read().unwrap();
-            if let Some(body) = rd.get(body_sym) {
-                // Cache hit, return a reference to the previously decoded body.
-                return body.clone();
-            }
-        } // Drop the RwLock's read() to prevent deadlocking.
+    pub fn body(&self, body_sym: &str) -> Option<&Body> {
+        let cache = &self.body_cache;
+
+        if let Some(body) = cache.get(body_sym) {
+            // Key exists, so it's a query that's been performed before. Potentially a cache
+            // hit (depending upon what's inside the SyncOnceCell).
+            return body.get();
+        }
 
         // Cache miss. Decode the body and update the cache.
         for (sec_name, hdr, hdr_size) in SIR.hdrs.values() {
             if let Some(off) = hdr.bodies.get(body_sym) {
                 let body = self.decode_body(sec_name, hdr_size + off);
-                let mut wr = self.body_cache.write().unwrap();
-                let arc = Arc::new(body);
-                wr.insert(body_sym.to_owned(), Some(arc.clone()));
-                return Some(arc);
+                let cell = SyncOnceCell::new();
+                cell.set(body);
+                cache.insert(body_sym.to_owned(), cell);
+                return cache.get(body_sym).unwrap().get();
             }
         }
 
         // The body is absent. Update the cache with a `None` to prevent repeated searches.
-        self.body_cache
-            .write()
-            .unwrap()
-            .insert(body_sym.to_owned(), None);
+        cache.insert(body_sym.to_owned(), SyncOnceCell::new());
         None
     }
 }
