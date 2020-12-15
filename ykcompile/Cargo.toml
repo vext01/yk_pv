@@ -9,6 +9,7 @@ license = "Apache-2.0 OR MIT"
 
 [dependencies]
 dynasmrt = "1.0.0"
+fxhash = "0.2"
 hex = "0.4.2"
 lazy_static = "1.4.0"
 libc = "0.2.80"

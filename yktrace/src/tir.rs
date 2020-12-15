@@ -8,8 +8,8 @@ use crate::{
     sir::{self, Sir, SirTraceIterator},
     INTERP_STEP_ARG
 };
+use fxhash::{FxHashMap, FxHashSet};
 use std::{
-    collections::{HashMap, HashSet},
     convert::TryFrom,
     fmt::{self, Display, Write}
 };
@@ -23,8 +23,8 @@ pub use ykpack::{
 pub struct TirTrace<'a, 'm> {
     ops: Vec<TirOp>,
     /// Maps each local variable to its declaration, including type.
-    pub local_decls: HashMap<Local, LocalDecl>,
-    pub addr_map: HashMap<String, u64>,
+    pub local_decls: FxHashMap<Local, LocalDecl>,
+    pub addr_map: FxHashMap<String, u64>,
     sir: &'a Sir<'m>
 }
 
@@ -39,7 +39,7 @@ impl<'a, 'm> TirTrace<'a, 'm> {
         // Symbol name of the function currently being ignored during tracing.
         let mut ignore: Option<String> = None;
         // Maps symbol names to their virtual addresses.
-        let mut addr_map: HashMap<String, u64> = HashMap::new();
+        let mut addr_map: FxHashMap<String, u64> = FxHashMap::default();
 
         let mut return_iplaces: Vec<IPlace> = Vec::new();
 
@@ -47,9 +47,9 @@ impl<'a, 'm> TirTrace<'a, 'm> {
         // variables. No local should be used without first being defined. If that happens it's
         // likely that the user used a variable from outside the scope of the trace without
         // introducing it via `trace_locals()`.
-        let mut defined_locals: HashSet<Local> = HashSet::new();
-        let mut def_sites: HashMap<Local, usize> = HashMap::new();
-        let mut last_use_sites = HashMap::new();
+        let mut defined_locals: FxHashSet<Local> = FxHashSet::default();
+        let mut def_sites: FxHashMap<Local, usize> = FxHashMap::default();
+        let mut last_use_sites = FxHashMap::default();
 
         // Ensure the argument to the `interp_step` function is defined by the first statement.
         // The arg is always at local index 1.
@@ -463,7 +463,7 @@ struct VarRenamer {
     /// offsets for consecutive inlined function calls.
     acc: Option<u32>,
     /// Maps a renamed local to its local declaration.
-    local_decls: HashMap<Local, LocalDecl>
+    local_decls: FxHashMap<Local, LocalDecl>
 }
 
 impl VarRenamer {
@@ -472,12 +472,12 @@ impl VarRenamer {
             stack: vec![0],
             offset: 0,
             acc: None,
-            local_decls: HashMap::new()
+            local_decls: FxHashMap::default()
         }
     }
 
     /// Finalises the renamer, returning the local decls.
-    fn done(self) -> HashMap<Local, LocalDecl> {
+    fn done(self) -> FxHashMap<Local, LocalDecl> {
         self.local_decls
     }
 

@@ -371,10 +371,7 @@ pub struct LocalDecl {
 
 impl LocalDecl {
     pub fn new(ty: TypeId, referenced: bool) -> Self {
-        Self {
-            ty,
-            referenced,
-        }
+        Self { ty, referenced }
     }
 }
 

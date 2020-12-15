@@ -13,9 +13,9 @@ extern crate test;
 mod stack_builder;
 
 use dynasmrt::{x64::Rq::*, Register};
+use fxhash::FxHashMap;
 use libc::{c_void, dlsym, RTLD_DEFAULT};
 use stack_builder::StackBuilder;
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::CString;
 use std::fmt::{self, Display, Formatter};
@@ -393,24 +393,24 @@ pub struct TraceCompiler<TT> {
     /// The dynasm assembler which will do all of the heavy lifting of the assembly.
     asm: dynasmrt::x64::Assembler,
     /// Stores the content of each register.
-    register_content_map: HashMap<u8, RegAlloc>,
+    register_content_map: FxHashMap<u8, RegAlloc>,
     /// Maps trace locals to their location (register, stack).
-    variable_location_map: HashMap<Local, Location>,
+    variable_location_map: FxHashMap<Local, Location>,
     /// Local decls of the tir trace.
-    local_decls: HashMap<Local, LocalDecl>,
+    local_decls: FxHashMap<Local, LocalDecl>,
     /// Stack builder for allocating objects on the stack.
     stack_builder: StackBuilder,
     /// Stores the memory addresses of local functions.
-    addr_map: HashMap<String, u64>,
+    addr_map: FxHashMap<String, u64>,
     _pd: PhantomData<TT>,
 }
 
 impl<TT> TraceCompiler<TT> {
-    fn new(local_decls: HashMap<Local, LocalDecl>, addr_map: HashMap<String, u64>) -> Self {
+    fn new(local_decls: FxHashMap<Local, LocalDecl>, addr_map: FxHashMap<String, u64>) -> Self {
         let mut tc = TraceCompiler::<TT> {
             asm: dynasmrt::x64::Assembler::new().unwrap(),
             register_content_map: REG_POOL.iter().map(|r| (*r, RegAlloc::Free)).collect(),
-            variable_location_map: HashMap::new(),
+            variable_location_map: FxHashMap::default(),
             local_decls,
             stack_builder: StackBuilder::default(),
             addr_map,
@@ -1773,7 +1773,7 @@ impl<TT> TraceCompiler<TT> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompileError, HashMap, Local, LocalDecl, Location, TraceCompiler, TypeId, REG_POOL,
+        CompileError, FxHashMap, Local, LocalDecl, Location, TraceCompiler, TypeId, REG_POOL,
     };
     use fm::FMBuilder;
     use libc::{abs, c_void, getuid};
@@ -1889,7 +1889,7 @@ mod tests {
         struct IO(u8);
 
         let types = TestTypes::new();
-        let mut local_decls = HashMap::new();
+        let mut local_decls = FxHashMap::default();
         local_decls.insert(Local(0), LocalDecl::new(types.t_u8, false));
         local_decls.insert(Local(1), LocalDecl::new(types.t_i64, false));
         local_decls.insert(Local(2), LocalDecl::new(types.t_string, false));
@@ -1914,7 +1914,7 @@ mod tests {
         struct IO(u8);
 
         let types = TestTypes::new();
-        let mut local_decls = HashMap::new();
+        let mut local_decls = FxHashMap::default();
         for i in (0..9).step_by(3) {
             local_decls.insert(Local(i + 0), LocalDecl::new(types.t_u8, false));
             local_decls.insert(Local(i + 1), LocalDecl::new(types.t_i64, false));
@@ -1939,7 +1939,7 @@ mod tests {
         let num_regs = REG_POOL.len() + 1; // Plus one for TIO_REG.
         let num_spills = 16;
         let num_decls = num_regs + num_spills;
-        let mut local_decls = HashMap::new();
+        let mut local_decls = FxHashMap::default();
         for i in 0..num_decls {
             local_decls.insert(
                 Local(u32::try_from(i).unwrap()),
@@ -1972,7 +1972,7 @@ mod tests {
         let types = TestTypes::new();
         let num_regs = REG_POOL.len() + 1; // Plus one for TIO_REG.
         let num_decls = num_regs + 4;
-        let mut local_decls = HashMap::new();
+        let mut local_decls = FxHashMap::default();
         for i in 0..num_decls {
             local_decls.insert(
                 Local(u32::try_from(i).unwrap()),
@@ -2022,7 +2022,7 @@ mod tests {
     fn reg_alloc_always_on_stack() {
         struct IO(u8);
         let types = TestTypes::new();
-        let mut local_decls = HashMap::new();
+        let mut local_decls = FxHashMap::default();
 
         // In a TIR trace, the first two decls are a unit and the trace inputs, which are handled
         // specially. We populate their slots so that we can acquire regular locals with no special
