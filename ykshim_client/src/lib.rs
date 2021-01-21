@@ -72,10 +72,6 @@ pub enum TracingKind {
 pub struct ThreadTracer(*mut c_void);
 
 /// Start tracing using the specified kind of tracing.
-/// FIXME `stop_tracing` must be called after, or the `ThreadTracer` instance will leak. The C ABI
-/// gets in the way of drop semantics. If you add an `impl Drop` to cover the case where
-/// `stop_tracing()` isn't called, you will get a double free if it is called. Either make
-/// stop_tracing swap in a null ptr, or make it not consume the instance on the internal side.
 pub fn start_tracing(tracing_kind: TracingKind) -> ThreadTracer {
     let tracer = unsafe { __ykshim_start_tracing(tracing_kind as u8) };
     assert!(!tracer.is_null());
