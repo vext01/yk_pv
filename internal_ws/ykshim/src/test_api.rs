@@ -13,18 +13,14 @@ use yktrace::tir::TirTrace;
 
 #[no_mangle]
 unsafe extern "C" fn __ykshim_sirtrace_len(sir_trace: *mut c_void) -> size_t {
-    let trace = Box::from_raw(sir_trace as *mut SirTrace);
-    let ret = trace.len();
-    Box::leak(trace);
-    ret
+    let trace = &mut *(sir_trace as *mut SirTrace);
+    trace.len()
 }
 
 #[no_mangle]
 unsafe extern "C" fn __ykshim_tirtrace_new(sir_trace: *mut c_void) -> *mut c_void {
-    let sir_trace = Box::from_raw(sir_trace as *mut SirTrace);
-    let ret = Box::into_raw(Box::new(TirTrace::new(&SIR, &*sir_trace).unwrap())) as *mut c_void;
-    Box::leak(sir_trace);
-    ret
+    let sir_trace = &mut *(sir_trace as *mut SirTrace);
+    Box::into_raw(Box::new(TirTrace::new(&SIR, &*sir_trace).unwrap())) as *mut c_void
 }
 
 #[no_mangle]
@@ -65,13 +61,13 @@ unsafe extern "C" fn __ykshim_tracecompiler_drop(comp: *mut c_void) {
 
 #[no_mangle]
 unsafe extern "C" fn __ykshim_tracecompiler_insert_decl(
-    tracecompiler: *mut c_void,
+    tc: *mut c_void,
     local: Local,
     local_ty_cgu: CguHash,
     local_ty_index: TyIndex,
     referenced: bool,
 ) {
-    let mut tc = Box::from_raw(tracecompiler as *mut TraceCompiler);
+    let tc = &mut *(tc as *mut TraceCompiler);
     tc.local_decls.insert(
         local,
         LocalDecl {
@@ -79,7 +75,6 @@ unsafe extern "C" fn __ykshim_tracecompiler_insert_decl(
             referenced,
         },
     );
-    Box::leak(tc);
 }
 
 /// Returns a string describing the register allocation of the specified local.
@@ -88,18 +83,15 @@ unsafe extern "C" fn __ykshim_tracecompiler_local_to_location_str(
     tc: *mut c_void,
     local: u32,
 ) -> *mut c_char {
-    let mut tc = Box::from_raw(tc as *mut TraceCompiler);
+    let tc = &mut *(tc as *mut TraceCompiler);
     let rstr = format!("{:?}", tc.local_to_location(Local(local)));
-    let cstr = CString::new(rstr.as_str()).unwrap().into_raw();
-    Box::leak(tc);
-    cstr
+    CString::new(rstr.as_str()).unwrap().into_raw()
 }
 
 #[no_mangle]
 unsafe extern "C" fn __ykshim_tracecompiler_local_dead(tc: *mut c_void, local: u32) {
-    let mut tc = Box::from_raw(tc as *mut TraceCompiler);
+    let tc = &mut *(tc as *mut TraceCompiler);
     tc.local_dead(&Local(local)).unwrap();
-    Box::leak(tc);
 }
 
 #[no_mangle]
