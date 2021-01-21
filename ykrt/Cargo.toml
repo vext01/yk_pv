@@ -6,5 +6,4 @@ edition = "2018"
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-yktrace = { path = "../internal_ws/yktrace" }
-ykcompile = { path = "../internal_ws/ykcompile" }
+ykshim_client = { path = "../ykshim_client" }
