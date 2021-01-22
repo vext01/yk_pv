@@ -24,41 +24,50 @@ pub struct CguHash(u64);
 pub type TypeId = (CguHash, TyIndex);
 pub const RETURN_LOCAL: Local = Local(0);
 
-extern "C" {
-    type RawThreadTracer;
-    type RawSirTrace;
+// Opaque pointers.
+type RawThreadTracer = c_void;
+type RawSirTrace = c_void;
+type RawTirTrace = c_void;
+type RawCompiledTrace = c_void;
+type RawTraceCompiler = c_void;
 
+extern "C" {
     // The "Production" API.
     pub fn __ykshim_start_tracing(tracing_kind: u8) -> *mut RawThreadTracer;
-    pub fn __ykshim_stop_tracing(tracer: *mut RawThreadTracer, error_msg: *mut *mut c_char) -> *mut RawSirTrace;
-    pub fn __ykshim_compile_trace(
-        sir_trace: *mut c_void,
+    pub fn __ykshim_stop_tracing(
+        tracer: *mut RawThreadTracer,
         error_msg: *mut *mut c_char,
-    ) -> *mut c_void;
-    pub fn __ykshim_compiled_trace_get_ptr(compiled_trace: *const c_void) -> *const c_void;
-    pub fn __ykshim_compiled_trace_drop(compiled_trace: *mut c_void);
-    pub fn __ykshim_sirtrace_drop(trace: *mut c_void);
+    ) -> *mut RawSirTrace;
+    pub fn __ykshim_compile_trace(
+        sir_trace: *mut RawSirTrace,
+        error_msg: *mut *mut c_char,
+    ) -> *mut RawCompiledTrace;
+    pub fn __ykshim_compiled_trace_get_ptr(
+        compiled_trace: *const RawCompiledTrace,
+    ) -> *const c_void;
+    pub fn __ykshim_compiled_trace_drop(compiled_trace: *mut RawCompiledTrace);
+    pub fn __ykshim_sirtrace_drop(trace: *mut RawSirTrace);
 
     // The testing API.
-    pub fn __ykshim_sirtrace_len(sir_trace: *mut c_void) -> size_t;
-    pub fn __ykshim_tirtrace_new(sir_trace: *mut c_void) -> *mut c_void;
-    pub fn __ykshim_tracecompiler_drop(comp: *mut c_void);
-    pub fn __ykshim_tirtrace_len(tir_trace: *mut c_void) -> size_t;
-    pub fn __ykshim_tirtrace_display(tir_trace: *mut c_void) -> *mut c_char;
+    pub fn __ykshim_sirtrace_len(sir_trace: *mut RawSirTrace) -> size_t;
+    pub fn __ykshim_tirtrace_new(sir_trace: *mut RawSirTrace) -> *mut RawTirTrace;
+    pub fn __ykshim_tracecompiler_drop(comp: *mut RawTraceCompiler);
+    pub fn __ykshim_tirtrace_len(tir_trace: *mut RawTirTrace) -> size_t;
+    pub fn __ykshim_tirtrace_display(tir_trace: *mut RawTirTrace) -> *mut c_char;
     pub fn __ykshim_body_ret_ty(sym: *mut c_char, ret_cgu: *mut CguHash, ret_idx: *mut TyIndex);
-    pub fn __ykshim_tracecompiler_default() -> *mut c_void;
+    pub fn __ykshim_tracecompiler_default() -> *mut RawTraceCompiler;
     pub fn __ykshim_tracecompiler_insert_decl(
-        tc: *mut c_void,
+        tc: *mut RawTraceCompiler,
         local: Local,
         local_ty_cgu: CguHash,
         local_ty_index: TyIndex,
         referenced: bool,
     );
     pub fn __ykshim_tracecompiler_local_to_location_str(
-        tc: *mut c_void,
+        tc: *mut RawTraceCompiler,
         local: Local,
     ) -> *mut c_char;
-    pub fn __ykshim_tracecompiler_local_dead(tc: *mut c_void, local: Local);
+    pub fn __ykshim_tracecompiler_local_dead(tc: *mut RawTraceCompiler, local: Local);
     pub fn __ykshim_tracecompiler_find_sym(sym: *mut c_char) -> *mut c_void;
     pub fn __yktest_interpret_body(body_name: *mut c_char, icx: *mut u8);
     pub fn __yktest_reg_pool_size() -> usize;
@@ -74,7 +83,7 @@ pub enum TracingKind {
     HardwareTracing = 1,
 }
 
-pub struct ThreadTracer(*mut c_void);
+pub struct ThreadTracer(*mut RawThreadTracer);
 
 /// Start tracing using the specified kind of tracing.
 pub fn start_tracing(tracing_kind: TracingKind) -> ThreadTracer {
@@ -105,7 +114,7 @@ impl Drop for ThreadTracer {
     }
 }
 
-pub struct SirTrace(*mut c_void);
+pub struct SirTrace(*mut RawSirTrace);
 
 unsafe impl Send for SirTrace {}
 unsafe impl Sync for SirTrace {}
@@ -124,7 +133,7 @@ impl Drop for SirTrace {
     }
 }
 
-pub struct TirTrace(*mut c_void);
+pub struct TirTrace(*mut RawTirTrace);
 
 impl TirTrace {
     pub fn new(sir_trace: &SirTrace) -> Self {
