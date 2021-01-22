@@ -25,9 +25,12 @@ pub type TypeId = (CguHash, TyIndex);
 pub const RETURN_LOCAL: Local = Local(0);
 
 extern "C" {
+    type RawThreadTracer;
+    type RawSirTrace;
+
     // The "Production" API.
-    pub fn __ykshim_start_tracing(tracing_kind: u8) -> *mut c_void;
-    pub fn __ykshim_stop_tracing(tracer: *mut c_void, error_msg: *mut *mut c_char) -> *mut c_void;
+    pub fn __ykshim_start_tracing(tracing_kind: u8) -> *mut RawThreadTracer;
+    pub fn __ykshim_stop_tracing(tracer: *mut RawThreadTracer, error_msg: *mut *mut c_char) -> *mut RawSirTrace;
     pub fn __ykshim_compile_trace(
         sir_trace: *mut c_void,
         error_msg: *mut *mut c_char,
