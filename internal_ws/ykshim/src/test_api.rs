@@ -94,18 +94,18 @@ unsafe extern "C" fn __ykshim_tracecompiler_insert_decl(
 #[no_mangle]
 unsafe extern "C" fn __ykshim_tracecompiler_local_to_location_str(
     tc: *mut c_void,
-    local: u32,
+    local: Local,
 ) -> *mut c_char {
     let tc = &mut *(tc as *mut TraceCompiler);
-    let rstr = format!("{:?}", tc.local_to_location(Local(local)));
+    let rstr = format!("{:?}", tc.local_to_location(local));
     CString::new(rstr.as_str()).unwrap().into_raw()
 }
 
 /// Inform a TraceCompiler's register allocator that a local variable is dead.
 #[no_mangle]
-unsafe extern "C" fn __ykshim_tracecompiler_local_dead(tc: *mut TraceCompiler, local: u32) {
+unsafe extern "C" fn __ykshim_tracecompiler_local_dead(tc: *mut TraceCompiler, local: Local) {
     let tc = &mut *tc;
-    tc.local_dead(&Local(local)).unwrap();
+    tc.local_dead(&local).unwrap();
 }
 
 /// Find a symbol's address in the current memory image. Returns NULL if it can't be found.

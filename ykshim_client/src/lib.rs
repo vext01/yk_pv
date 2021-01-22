@@ -51,9 +51,11 @@ extern "C" {
         local_ty_index: TyIndex,
         referenced: bool,
     );
-    pub fn __ykshim_tracecompiler_local_to_location_str(tc: *mut c_void, local: u32)
-        -> *mut c_char;
-    pub fn __ykshim_tracecompiler_local_dead(tc: *mut c_void, local: u32);
+    pub fn __ykshim_tracecompiler_local_to_location_str(
+        tc: *mut c_void,
+        local: Local,
+    ) -> *mut c_char;
+    pub fn __ykshim_tracecompiler_local_dead(tc: *mut c_void, local: Local);
     pub fn __ykshim_tracecompiler_find_sym(sym: *mut c_char) -> *mut c_void;
     pub fn __yktest_interpret_body(body_name: *mut c_char, icx: *mut u8);
     pub fn __yktest_reg_pool_size() -> usize;
@@ -211,12 +213,12 @@ impl TraceCompiler {
     }
 
     pub fn local_to_location_str(&mut self, local: Local) -> String {
-        let ptr = unsafe { __ykshim_tracecompiler_local_to_location_str(self.0, local.0) };
+        let ptr = unsafe { __ykshim_tracecompiler_local_to_location_str(self.0, local) };
         String::from(unsafe { CString::from_raw(ptr).to_str().unwrap() })
     }
 
     pub fn local_dead(&mut self, local: Local) {
-        unsafe { __ykshim_tracecompiler_local_dead(self.0, local.0) };
+        unsafe { __ykshim_tracecompiler_local_dead(self.0, local) };
     }
 
     pub fn find_symbol(sym: &str) -> *mut c_void {
