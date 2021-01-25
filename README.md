@@ -8,6 +8,13 @@ This repository houses the non-compiler components of the system.
 
 The compiler repo can be found [here](https://github.com/softdevteam/ykrustc).
 
+## Getting Started
+
+To get started, see
+[this section in the documentation](https://softdevteam.github.io/ykdocs/dev/getting_started.html).
+
+Note that you must use `cargo xtask` commands when dealing with this repo.
+
 ## Contributors
 
 Yorick is developed by a team of people listed in the
