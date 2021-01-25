@@ -36,44 +36,44 @@ type RawTraceCompiler = c_void;
 
 extern "C" {
     // The "Production" API.
-    pub fn __ykshim_start_tracing(tracing_kind: u8) -> *mut RawThreadTracer;
-    pub fn __ykshim_stop_tracing(
+    fn __ykshim_start_tracing(tracing_kind: u8) -> *mut RawThreadTracer;
+    fn __ykshim_stop_tracing(
         tracer: *mut RawThreadTracer,
         error_msg: *mut *mut c_char,
     ) -> *mut RawSirTrace;
-    pub fn __ykshim_compile_trace(
+    fn __ykshim_compile_trace(
         sir_trace: *mut RawSirTrace,
         error_msg: *mut *mut c_char,
     ) -> *mut RawCompiledTrace;
-    pub fn __ykshim_compiled_trace_get_ptr(
+    fn __ykshim_compiled_trace_get_ptr(
         compiled_trace: *const RawCompiledTrace,
     ) -> *const c_void;
-    pub fn __ykshim_compiled_trace_drop(compiled_trace: *mut RawCompiledTrace);
-    pub fn __ykshim_sirtrace_drop(trace: *mut RawSirTrace);
+    fn __ykshim_compiled_trace_drop(compiled_trace: *mut RawCompiledTrace);
+    fn __ykshim_sirtrace_drop(trace: *mut RawSirTrace);
 
     // The testing API.
-    pub fn __ykshim_sirtrace_len(sir_trace: *mut RawSirTrace) -> size_t;
-    pub fn __ykshim_tirtrace_new(sir_trace: *mut RawSirTrace) -> *mut RawTirTrace;
-    pub fn __ykshim_tracecompiler_drop(comp: *mut RawTraceCompiler);
-    pub fn __ykshim_tirtrace_len(tir_trace: *mut RawTirTrace) -> size_t;
-    pub fn __ykshim_tirtrace_display(tir_trace: *mut RawTirTrace) -> *mut c_char;
-    pub fn __ykshim_body_ret_ty(sym: *mut c_char, ret_cgu: *mut CguHash, ret_idx: *mut TyIndex);
-    pub fn __ykshim_tracecompiler_default() -> *mut RawTraceCompiler;
-    pub fn __ykshim_tracecompiler_insert_decl(
+    fn __ykshim_sirtrace_len(sir_trace: *mut RawSirTrace) -> size_t;
+    fn __ykshim_tirtrace_new(sir_trace: *mut RawSirTrace) -> *mut RawTirTrace;
+    fn __ykshim_tracecompiler_drop(comp: *mut RawTraceCompiler);
+    fn __ykshim_tirtrace_len(tir_trace: *mut RawTirTrace) -> size_t;
+    fn __ykshim_tirtrace_display(tir_trace: *mut RawTirTrace) -> *mut c_char;
+    fn __ykshim_body_ret_ty(sym: *mut c_char, ret_cgu: *mut CguHash, ret_idx: *mut TyIndex);
+    fn __ykshim_tracecompiler_default() -> *mut RawTraceCompiler;
+    fn __ykshim_tracecompiler_insert_decl(
         tc: *mut RawTraceCompiler,
         local: Local,
         local_ty_cgu: CguHash,
         local_ty_index: TyIndex,
         referenced: bool,
     );
-    pub fn __ykshim_tracecompiler_local_to_location_str(
+    fn __ykshim_tracecompiler_local_to_location_str(
         tc: *mut RawTraceCompiler,
         local: Local,
     ) -> *mut c_char;
-    pub fn __ykshim_tracecompiler_local_dead(tc: *mut RawTraceCompiler, local: Local);
-    pub fn __ykshim_tracecompiler_find_sym(sym: *mut c_char) -> *mut c_void;
-    pub fn __yktest_interpret_body(body_name: *mut c_char, icx: *mut u8);
-    pub fn __yktest_reg_pool_size() -> usize;
+    fn __ykshim_tracecompiler_local_dead(tc: *mut RawTraceCompiler, local: Local);
+    fn __ykshim_tracecompiler_find_sym(sym: *mut c_char) -> *mut c_void;
+    fn __yktest_interpret_body(body_name: *mut c_char, icx: *mut u8);
+    fn __yktest_reg_pool_size() -> usize;
 }
 
 /// The different ways by which we can collect a trace.
