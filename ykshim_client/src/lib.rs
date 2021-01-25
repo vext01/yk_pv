@@ -1,4 +1,7 @@
 //! Client to the ykshim crate in the internal workspace.
+//!
+//! For more information, see this section in the documentation:
+//! https://softdevteam.github.io/ykdocs/tech/yk_structure.html
 
 use libc::size_t;
 use std::collections::HashMap;

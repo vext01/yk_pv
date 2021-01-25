@@ -1,7 +1,7 @@
 //! API to the optimised internals of the JIT runtime.
 //!
-//! Note that the crate is compiled with the abort strategy and that it is therefore not necessary
-//! to guard against panics over the C ABI boundary.
+//! For more information, see this section in the documentation:
+//! https://softdevteam.github.io/ykdocs/tech/yk_structure.html
 
 /// The production API.
 mod prod_api;
