@@ -197,7 +197,11 @@ macro_rules! binop_mul_div {
                         (src_r, false)
                     };
                     // Zero unused extended operand space.
-                    if size > 1 {
+                    if size == 1 {
+                        dynasm!(self.asm
+                            ; and ax, 0xff
+                        );
+                    } else {
                         dynasm!(self.asm
                             ; xor rdx, rdx
                         );
@@ -205,7 +209,6 @@ macro_rules! binop_mul_div {
                     match size {
                         1 => {
                             dynasm!(self.asm
-                                ; and ax, 0xff // Zero unused extended operand space.
                                 ; $op Rb(r)
                             );
                         }
@@ -235,7 +238,7 @@ macro_rules! binop_mul_div {
                 },
                 Location::Mem(..) => todo!(),
                 Location::Const { val, .. } => {
-                    dynasm!(self.asm // FIXME not always.
+                    dynasm!(self.asm
                         ; xor rdx, rdx
                     );
                     // It's safe to use TEMP_REG here, because opnd2 isn't in a register and if
