@@ -149,7 +149,6 @@ macro_rules! binop_mul_div {
     // We are however, required to zero the unused extended operand space to get the correct
     // result, and we must be careful to save and restore anything that would be clobbered.
     // Specifically:
-    //
     //   - RAX is always clobbered, so we must always save and restore it.
     //   - For all but the r/m8 variations, RDX is clobbered. So if the size of our SIR operands is
     //     >1 byte, then we must also save and restore RDX.
@@ -165,7 +164,7 @@ macro_rules! binop_mul_div {
                     ; push rdx
                 );
             }
-            // RAX is an always clobbered.
+            // RAX is always clobbered.
             dynasm!(self.asm
                 ; push rax
             );
@@ -177,9 +176,9 @@ macro_rules! binop_mul_div {
             let src_loc = self.iplace_to_location(opnd2);
             match src_loc {
                 Location::Reg(src_r) => {
-                    // Handle cases where the second operand was stored in an already clobbered
-                    // register. In these cases we load the value back from the stack.
+                    // Handle cases where our input operands clash with a clobbered register.
                     let (r, borrow_rcx) = if src_r == RAX.code() {
+                        // RAX has already been clobbered. Take a copy from the stack.
                         let rax_off = i32::try_from(QWORD_REG_SIZE).unwrap();
                         dynasm!(self.asm
                             ; push rcx
@@ -187,16 +186,16 @@ macro_rules! binop_mul_div {
                         );
                         (RCX.code(), true)
                     } else if size > 1 && src_r == RDX.code() {
-                        let rdx_off = i32::try_from(QWORD_REG_SIZE).unwrap() * 2;
+                        // RDX hasn't been clobbered yet, but it will be.
                         dynasm!(self.asm
                             ; push rcx
-                            ; mov rcx, [rsp + rdx_off]
+                            ; mov rcx, rdx
                         );
                         (RCX.code(), true)
                     } else {
                         (src_r, false)
                     };
-                    // Zero unused extended operand space.
+                    // Set unused extended operand space to zero.
                     if size == 1 {
                         dynasm!(self.asm
                             ; and ax, 0xff
