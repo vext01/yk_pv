@@ -46,6 +46,6 @@ clang-format --version
 cargo xtask cfmt
 git diff --exit-code
 
-cargo test
+RUST_TEST_THREADS=1 cargo test -- --nocapture
 cargo test --release
 cargo bench
