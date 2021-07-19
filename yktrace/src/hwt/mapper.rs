@@ -114,6 +114,7 @@ impl HWTMapper {
     ) -> Result<(Vec<IRBlock>, HashMap<CString, u64>), HWTracerError> {
         let mut ret_irblocks: Vec<IRBlock> = Vec::new();
         let mut itr = trace.iter_blocks();
+        let mut prev_block: Option<hwtracer::Block> = None;
         while let Some(block) = itr.next() {
             let block = block?;
             let irblocks = self.map_block(&block);
@@ -127,8 +128,25 @@ impl HWTMapper {
                     }
                 }
             } else {
-                ret_irblocks.extend(irblocks);
+                for irblock in irblocks.into_iter() {
+                    // A basic block may map to >1 *machine* basic block. If we see the same block
+                    // repeated, then we need to check if we re-executing the same basic block or
+                    // if we are executing next machine basic block for that same block. In the
+                    // latter case, we mustn't record the block in the trace again.
+                    let mut append = true;
+                    if !ret_irblocks.is_empty() && ret_irblocks.last().unwrap() == &irblock {
+                        if let Some(prev) = &prev_block {
+                            if prev.first_instr() != block.first_instr() {
+                                append = false;
+                            }
+                        }
+                    }
+                    if append {
+                        ret_irblocks.push(irblock);
+                    }
+                }
             }
+            prev_block = Some(block);
         }
         // Strip any trailing unmappable blocks.
         if !ret_irblocks.is_empty() {
