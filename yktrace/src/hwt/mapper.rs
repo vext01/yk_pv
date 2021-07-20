@@ -183,7 +183,12 @@ impl HWTMapper {
     fn map_block(&mut self, block: &hwtracer::Block) -> Vec<IRBlock> {
         let block_vaddr = block.first_instr();
         let (obj_name, block_off) = code_vaddr_to_off(block_vaddr as usize).unwrap();
-        let block_len = block.last_instr() - block_vaddr;
+
+        // The `+ 1` here is because hwtracer gives us the address of the last instruction in the
+        // block (as opposed to the last byte of the block). Without adding one, the last
+        // instruction of the block would be missed and this would cause issues. For example, if
+        // the block has only one instruction, we'd query an empty range and fail to map the block.
+        let block_len = (block.last_instr() - block_vaddr) + 1;
 
         let mut ret = Vec::new();
         let mut ents = BLOCK_MAP
