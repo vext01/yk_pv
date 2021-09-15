@@ -114,6 +114,14 @@ fn mk_compiler(exe: &Path, src: &Path, opt: &str, extra_objs: &[PathBuf]) -> Com
         src.to_str().unwrap(),
     ]);
     compiler.args(extra_objs);
+
+    // FIXME: lang_tester should do this, not us.
+    if let Ok(val) = env::var("YKD_CTEST_DEBUG") {
+        if val == "1" {
+            dbg!(&compiler);
+        }
+    }
+
     compiler
 }
 
