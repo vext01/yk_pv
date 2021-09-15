@@ -56,9 +56,8 @@ pub extern "C" fn __ykutil_get_llvmbc_section(res_addr: *mut *const c_void, res_
 /// These symbols are not shipped as part of the main API.
 #[cfg(feature = "c_testing")]
 mod c_testing {
-    use libc::c_void;
     use std::{hint::black_box, os::raw::c_char, ptr};
-    use yktrace::{start_tracing, stop_tracing, BlockMap, IRTrace, TracingKind};
+    use yktrace::{start_tracing, stop_tracing, BlockMap, CompiledTrace, IRTrace, TracingKind};
 
     const SW_TRACING: usize = 0;
     const HW_TRACING: usize = 1;
@@ -79,14 +78,25 @@ mod c_testing {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn __yktrace_start_tracing(kind: usize, ...) {
+    pub unsafe extern "C" fn __yktrace_start_tracing(
+        kind: usize,
+        num_inputs: usize,
+        mut args: ...
+    ) {
         let kind = black_box(kind);
         let kind: TracingKind = match kind {
             SW_TRACING => TracingKind::SoftwareTracing,
             HW_TRACING => TracingKind::HardwareTracing,
             _ => panic!(),
         };
-        start_tracing(kind)
+        let mut inputs = Vec::new();
+        for _ in 0..num_inputs {
+            let a = args.arg();
+            dbg!(&a);
+            inputs.push(a);
+            //inputs.push(args.arg());
+        }
+        start_tracing(kind, inputs)
     }
 
     #[no_mangle]
@@ -130,7 +140,7 @@ mod c_testing {
     }
 
     #[no_mangle]
-    pub extern "C" fn __yktrace_irtrace_compile(trace: *mut IRTrace) -> *const c_void {
-        unsafe { &*trace }.compile()
+    pub extern "C" fn __yktrace_irtrace_compile(trace: *mut IRTrace) -> *mut CompiledTrace {
+        Box::into_raw(Box::new(unsafe { &*trace }.compile()))
     }
 }

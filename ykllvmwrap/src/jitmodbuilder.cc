@@ -112,8 +112,9 @@ std::vector<Value *> getTraceInputs(Module *AOTMod, InputTrace &InpTrace) {
       CallInst *CI = cast<CallInst>(&*I);
       Function *CF = CI->getCalledFunction();
       if ((CF != nullptr) && (CF->getName() == YKTRACE_START)) {
-        // Skip first argument to start_tracing.
-        for (auto Arg = CI->arg_begin() + 1; Arg != CI->arg_end(); Arg++) {
+        // Skip first two arguments to start_tracing: the tracing kind and number of inputs.
+        for (auto Arg = CI->arg_begin() + 2; Arg != CI->arg_end(); Arg++) {
+          errs() << "XXX: " << Arg->get() << "\n";
           Vec.push_back(Arg->get());
         }
         found = true;
@@ -367,6 +368,7 @@ public:
 
   // Generate the JIT module.
   Module *createModule() {
+    errs() << "hi\n";
     LLVMContext &JITContext = JITMod->getContext();
     // Find the trace inputs.
     vector<Value *> TraceInputs = getTraceInputs(AOTMod, InpTrace);

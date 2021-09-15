@@ -214,7 +214,8 @@ impl MT {
                             // We've initialised this Location and obtained the lock, so we can now
                             // start tracing for real.
                             let tid = Arc::clone(&mtt.tid);
-                            start_tracing(self.tracing_kind());
+                            // FIXME: Populate trace inputs.
+                            start_tracing(self.tracing_kind(), Vec::new());
                             *unsafe { new_ls.hot_location() } = HotLocation::Tracing(Some(tid));
                             mtt.tracing.set(Some(hl_ptr as *const ()));
                             loc.unlock();
@@ -309,12 +310,12 @@ impl MT {
                     // other threads won't think this thread has died while tracing.
                     opt.take();
                     match stop_tracing() {
-                        Ok(sir) => {
+                        Ok(irt) => {
                             let mtx = Arc::new(Mutex::new(None));
                             let mtx_cl = Arc::clone(&mtx);
                             *hl = HotLocation::Compiling(mtx);
                             loc.unlock();
-                            self.queue_compile_job(sir, mtx_cl);
+                            self.queue_compile_job(irt, mtx_cl);
                         }
                         Err(_) => todo!(),
                     }

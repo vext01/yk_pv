@@ -3,6 +3,7 @@
 use super::{IRTrace, ThreadTracer, ThreadTracerImpl};
 use crate::errors::InvalidTraceError;
 use hwtracer::backends::TracerBuilder;
+use std::ffi::c_void;
 
 pub mod mapper;
 use mapper::HWTMapper;
@@ -14,13 +15,13 @@ struct HWTThreadTracer {
 }
 
 impl ThreadTracerImpl for HWTThreadTracer {
-    fn stop_tracing(&mut self) -> Result<IRTrace, InvalidTraceError> {
+    fn stop_tracing(&mut self, inputs: Vec<*const c_void>) -> Result<IRTrace, InvalidTraceError> {
         self.active = false;
         let hwtrace = self.ttracer.stop_tracing().unwrap();
         let mt = HWTMapper::new();
         mt.map_trace(hwtrace)
             .map_err(|_| InvalidTraceError::InternalError)
-            .map(|(b, f)| IRTrace::new(b, f))
+            .map(|(b, f)| IRTrace::new(b, f, inputs))
     }
 }
 
@@ -31,7 +32,7 @@ impl Drop for HWTThreadTracer {
         }
     }
 }
-
+ 
 pub(crate) fn start_tracing() -> ThreadTracer {
     let tracer = TracerBuilder::new().build().unwrap();
     let mut ttracer = (*tracer).thread_tracer();
