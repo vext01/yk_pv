@@ -43,12 +43,15 @@ __attribute__((noinline)) int fib(int num, int *tcp) {
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, 0);
+  printf("XXX: %p %p\n", &argc, &res);
+  __yktrace_start_tracing(HW_TRACING, 2, &res, &argc);
   res = fib(argc * 8, &argc);
   void *tr = __yktrace_stop_tracing();
   assert(res == 21);
 
   struct compiled_trace ct = __yktrace_irtrace_compile(tr);
+  __yktrace_exec_trace(ct);
+  ffi_call_cif(arg1, arg2);
   //__yktrace_drop_irtrace(tr); FIXME
   (void) ct;
   //void (*func)(void *, void *) = (void (*)(void *, void *))ptr;

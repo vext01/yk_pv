@@ -90,6 +90,7 @@ mod c_testing {
             _ => panic!(),
         };
         let mut inputs = Vec::new();
+        dbg!(num_inputs);
         for _ in 0..num_inputs {
             let a = args.arg();
             dbg!(&a);
@@ -101,7 +102,9 @@ mod c_testing {
 
     #[no_mangle]
     pub extern "C" fn __yktrace_stop_tracing() -> *mut IRTrace {
-        Box::into_raw(Box::new(stop_tracing().unwrap())) as *mut _
+        let xx = stop_tracing().unwrap();
+        dbg!(&xx.inputs);
+        Box::into_raw(Box::new(xx)) as *mut IRTrace
     }
 
     #[no_mangle]
@@ -140,7 +143,7 @@ mod c_testing {
     }
 
     #[no_mangle]
-    pub extern "C" fn __yktrace_irtrace_compile(trace: *mut IRTrace) -> *mut CompiledTrace {
-        Box::into_raw(Box::new(unsafe { &*trace }.compile()))
+    pub extern "C" fn __yktrace_irtrace_compile(trace: *mut IRTrace) -> CompiledTrace {
+        unsafe { &*trace }.compile()
     }
 }

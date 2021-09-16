@@ -29,7 +29,7 @@ thread_local! {
     //
     // We hide the `ThreadTracer` in a thread local (rather than returning it to the consumer of
     // yk). This ensures that the `ThreadTracer` itself cannot appear in traces.
-    pub static THREAD_TRACER: RefCell<Option<(ThreadTracer, Vec<*const c_void>)>> = { RefCell::new(None) };
+    pub static THREAD_TRACER: RefCell<Option<(ThreadTracer, Vec<*const c_void>)>> = RefCell::new(None);
 }
 
 /// The different ways by which we can collect a trace.
@@ -93,7 +93,7 @@ pub struct IRTrace {
     /// Function addresses discovered dynamically via the trace. symbol-name -> address.
     faddrs: HashMap<CString, *const c_void>,
     /// FIXME
-    inputs: Vec<*const c_void>,
+    pub inputs: Vec<*const c_void>,
 }
 
 unsafe impl Send for IRTrace {}
@@ -214,6 +214,7 @@ impl IRTrace {
 }
 
 /// Binary executable trace code.
+#[repr(C)]
 pub struct CompiledTrace {
     code_ptr: *const c_void,
     cif: libffi::low::ffi_cif,
@@ -265,7 +266,7 @@ pub fn start_tracing(kind: TracingKind, inputs: Vec<*const c_void>) {
 /// Stop tracing on the current thread. Calling this when the current thread is not already tracing
 /// leads to undefined behaviour.
 pub fn stop_tracing() -> Result<IRTrace, InvalidTraceError> {
-    THREAD_TRACER.with(|tt| {
+    let xxx = THREAD_TRACER.with(|tt| {
         let tt_info = tt.borrow_mut().take().unwrap();
 	      dbg!(&tt_info.1);
         let ret = tt_info.0.stop_tracing(tt_info.1);
@@ -273,5 +274,9 @@ pub fn stop_tracing() -> Result<IRTrace, InvalidTraceError> {
             dbg!(&x.inputs);
         }
         ret
-    })
+    });
+    if let Ok(x) = &xxx {
+        dbg!(&x.inputs);
+    }
+    xxx
 }
