@@ -32,7 +32,7 @@ impl Drop for HWTThreadTracer {
         }
     }
 }
- 
+
 pub(crate) fn start_tracing() -> ThreadTracer {
     let tracer = TracerBuilder::new().build().unwrap();
     let mut ttracer = (*tracer).thread_tracer();

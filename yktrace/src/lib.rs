@@ -8,10 +8,8 @@ use libffi;
 use std::{
     cell::RefCell,
     collections::HashMap,
-    convert::TryFrom,
     default::Default,
     ffi::{CStr, CString},
-    mem::size_of,
     ptr,
 };
 mod hwt;
@@ -19,11 +17,8 @@ mod hwt;
 pub use errors::InvalidTraceError;
 pub use hwt::mapper::BlockMap;
 
-// FIXME: comment.
-//static FFI_PTR_ARGS: [libffi::low::ffi_type; 16] = [libffi::low::types::pointer; 16];
-//static MAX_FFI_PTR_ARGS: usize = 16;
-
 thread_local! {
+    // FIXME: talk about inputs.
     // When `Some`, contains the `ThreadTracer` for the current thread. When `None`, the current
     // thread is not being traced.
     //
@@ -129,8 +124,6 @@ impl IRTrace {
     }
 
     pub fn compile(&self) -> CompiledTrace {
-        dbg!("1");
-        dbg!(&self.inputs);
         let len = self.len();
         let mut func_names = Vec::with_capacity(len);
         let mut bbs = Vec::with_capacity(len);
@@ -145,80 +138,56 @@ impl IRTrace {
             }
         }
 
-        dbg!("2");
-        dbg!(&self.inputs);
-
         let mut faddr_keys = Vec::new();
-
-        dbg!("3");
-        dbg!(&self.inputs);
-
         let mut faddr_vals = Vec::new();
-
-        dbg!("4");
-        dbg!(&self.inputs);
-
         for k in self.faddrs.iter() {
             faddr_keys.push(k.0.as_ptr());
             faddr_vals.push(*k.1);
         }
 
-        dbg!("5");
-        dbg!(&self.inputs);
-
-        let code_ptr = ptr::null();
-        //let code_ptr = unsafe {
-        //    ykllvmwrap::__ykllvmwrap_irtrace_compile(
-        //        func_names.as_ptr(),
-        //        bbs.as_ptr(),
-        //        len,
-        //        faddr_keys.as_ptr(),
-        //        faddr_vals.as_ptr(),
-        //        faddr_keys.len(),
-        //    )
-        //};
-        //assert_ne!(code_ptr, ptr::null());
-        dbg!("hello");
+        let code_ptr = unsafe {
+            ykllvmwrap::__ykllvmwrap_irtrace_compile(
+                func_names.as_ptr(),
+                bbs.as_ptr(),
+                len,
+                faddr_keys.as_ptr(),
+                faddr_vals.as_ptr(),
+                faddr_keys.len(),
+            )
+        };
+        assert_ne!(code_ptr, ptr::null());
 
         //// Make a libffi calling interface (CIF) so that we can call the JITted code with the
         //// correct (dynamic) signature later.
-        ////
-        //// We have to use the low-level interface, as we need fine-grained control over the memory
-        //// management of the `ffi_cif` struct (at the time of writing there's no way to transfer
-        //// ownership of a CIF to foreign code using the `libffi::middle` interface).
         let num_inputs = self.inputs.len();
-        //dbg!(&self.inputs);
-        //// The CIF holds on to a pointer to the argument types so, we put them on the heap to
-        //// ensure that they live long enough.
         let mut cif_arg_types = Vec::new();
-        cif_arg_types.resize(num_inputs, unsafe {&libffi::low::types::pointer} as *const libffi::low::ffi_type);
+        cif_arg_types.resize(num_inputs, libffi::middle::Type::pointer());
 
-        let mut ret = CompiledTrace {
-            code_ptr,
-            cif: libffi::low::ffi_cif::default(),
-            cif_arg_types: Box::new(cif_arg_types),
-        };
-
-        //unsafe {
-        //    libffi::low::prep_cif(
-        //        &mut ret.cif,
-        //        libffi::low::ffi_abi_FFI_DEFAULT_ABI, // ABI.
-        //        num_inputs,                           // num args.
-        //        &mut libffi::low::types::void,        // return type.
-        //        (*ret.cif_arg_types).as_ptr() as *mut *mut _
-        //    )
-        //}
-        //.unwrap();
-        ret
+        CompiledTrace {
+            code_ptr: libffi::middle::CodePtr(code_ptr as *mut c_void),
+            cif: libffi::middle::Cif::new(cif_arg_types, libffi::middle::Type::void()),
+            args: self.inputs.clone(),
+        }
     }
 }
 
 /// Binary executable trace code.
 #[repr(C)]
 pub struct CompiledTrace {
-    code_ptr: *const c_void,
-    cif: libffi::low::ffi_cif,
-    cif_arg_types: Box<Vec<*const libffi::low::ffi_type>>,
+    code_ptr: libffi::middle::CodePtr,
+    cif: libffi::middle::Cif,
+    args: Vec<*const c_void>,
+}
+
+impl CompiledTrace {
+    pub fn execute(&self) {
+        let args = self
+            .args
+            .iter()
+            .map(|a| libffi::middle::arg(a))
+            .collect::<Vec<_>>();
+        unsafe { self.cif.call::<()>(self.code_ptr, &args) };
+    }
 }
 
 unsafe impl Send for CompiledTrace {}
@@ -266,17 +235,8 @@ pub fn start_tracing(kind: TracingKind, inputs: Vec<*const c_void>) {
 /// Stop tracing on the current thread. Calling this when the current thread is not already tracing
 /// leads to undefined behaviour.
 pub fn stop_tracing() -> Result<IRTrace, InvalidTraceError> {
-    let xxx = THREAD_TRACER.with(|tt| {
+    THREAD_TRACER.with(|tt| {
         let tt_info = tt.borrow_mut().take().unwrap();
-	      dbg!(&tt_info.1);
-        let ret = tt_info.0.stop_tracing(tt_info.1);
-        if let Ok(x) = &ret {
-            dbg!(&x.inputs);
-        }
-        ret
-    });
-    if let Ok(x) = &xxx {
-        dbg!(&x.inputs);
-    }
-    xxx
+        tt_info.0.stop_tracing(tt_info.1)
+    })
 }
