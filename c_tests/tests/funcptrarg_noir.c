@@ -21,18 +21,17 @@ int bar(size_t (*func)(const char *)) {
 
 int main(int argc, char **argv) {
   int z = 0;
-  __yktrace_start_tracing(HW_TRACING, &z);
+  __yktrace_start_tracing(HW_TRACING, 0);
   z = bar(strlen);
   NOOPT_VAL(z);
   void *tr = __yktrace_stop_tracing();
   assert(z == 3);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(void *) = (void (*)(void *))ptr;
-  int output = 0;
-  func(&output);
-  assert(output == 3);
+  z = 0;
+  __yktrace_irtrace_compile(ct);
+  assert(z == 3);
 
   return (EXIT_SUCCESS);
 }

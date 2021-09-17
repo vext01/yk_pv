@@ -18,19 +18,20 @@ int main(int argc, char **argv) {
     abort();
 
   int res;
-  __yktrace_start_tracing(HW_TRACING, &res, &argc);
+  __yktrace_start_tracing(HW_TRACING, 0);
   // Causes both a load and a store to things defined outside the trace.
+  NOOPT_VAL(argc);
   res = 1 + argc;
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
 
   assert(res == 2);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *, int *) = (void (*)(int *, int *))ptr;
-  int res2;
-  func(&res2, &argc);
-  assert(res2 == 2);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 2);
 
   return (EXIT_SUCCESS);
 }

@@ -10,7 +10,7 @@
 
 int main(int argc, char **argv) {
   int x = 1, res = 0;
-  __yktrace_start_tracing(HW_TRACING, &x, &res);
+  __yktrace_start_tracing(HW_TRACING, 0);
   NOOPT_VAL(x);
   switch (x) {
   case 1:
@@ -31,11 +31,9 @@ int main(int argc, char **argv) {
 
   x = 1;
   res = 0;
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *, int *) = (void (*)(int *, int *))ptr;
-  func(&x, &res);
-  printf("%d\n", res);
+  __yktrace_compiledtrace_exec(ct);
   assert(res == 5);
 
   return (EXIT_SUCCESS);

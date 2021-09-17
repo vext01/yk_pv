@@ -14,7 +14,7 @@
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, &res);
+  __yktrace_start_tracing(HW_TRACING, 0);
 #ifdef __x86_64__
   // Stores the constant 5 into `res`.
   asm("mov $5, %0"
@@ -25,15 +25,15 @@ int main(int argc, char **argv) {
 #else
 #error unknown platform
 #endif
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
   assert(res == 5);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *) = (void (*)(int *))ptr;
-  int res2 = 0;
-  func(&res2);
-  assert(res2 == 5);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 5);
 
   return (EXIT_SUCCESS);
 }

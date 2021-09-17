@@ -1,4 +1,3 @@
-// ignore: static strings: https://github.com/ykjit/yk/issues/382
 // Compiler:
 // Run-time:
 //   env-var: YKD_PRINT_IR=jit-pre-opt
@@ -6,7 +5,7 @@
 //    ...
 //    ...call i32 (i8*, ...) @printf...
 //    ...
-//    declare i32 @printf(i8* %0, ...)
+//    declare i32 @printf(...
 //    ...
 //   stdout:
 //     abc123
@@ -22,15 +21,16 @@
 
 int main(int argc, char **argv) {
   int x = 1;
-  __yktrace_start_tracing(HW_TRACING, &x);
+  __yktrace_start_tracing(HW_TRACING, 0);
+  NOOPT_VAL(x);
   printf("abc%d%d%d\n", x, x + 1, x + 2);
+  CLOBBER_MEM();
   void *tr = __yktrace_stop_tracing();
 
   x = 10;
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *) = (void (*)(int *))ptr;
-  func(&x);
+  __yktrace_compiledtrace_exec(ct);
 
   return (EXIT_SUCCESS);
 }

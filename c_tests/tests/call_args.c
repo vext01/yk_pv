@@ -3,11 +3,10 @@
 //   env-var: YKD_PRINT_IR=jit-pre-opt
 //   stderr:
 //     ...
-//     define internal void @__yk_compiled_trace_0(i32* %0) {
+//     define internal void @__yk_compiled_trace_0(...
 //       ...
-//       %2 = add nsw i32 3, 2...
+//       ...add nsw i32 3, 2...
 //       ...
-//       store i32 %2, i32* %0, align 4...
 //       ret void
 //     }
 //     ...
@@ -27,17 +26,18 @@ __attribute__((noinline)) int f(int a, int b) {
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, &res);
+  __yktrace_start_tracing(HW_TRACING, 0);
   res = f(2, 3);
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
   assert(res == 5);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(void *) = (void (*)(void *))ptr;
-  int output = 0;
-  func(&output);
-  assert(output == 5);
+
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 5);
 
   return (EXIT_SUCCESS);
 }

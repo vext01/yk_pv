@@ -16,17 +16,17 @@ int bar(size_t (*func)(const char *)) {
   int pre = func("abc");
 
   int res;
-  __yktrace_start_tracing(HW_TRACING, &res, &func);
+  __yktrace_start_tracing(HW_TRACING, 0);
   res = func("abc");
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
   assert(res == 3);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*cfunc)(void *, void *) = (void (*)(void *, void *))ptr;
-  int output = 0;
-  cfunc(&output, &func);
-  assert(output == 3);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 3);
 
   assert(pre == 3);
   return res;

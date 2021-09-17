@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
   void *dispatch[] = {&&l1, &&l2, &&l3};
   int z = 0, idx = argc;
 
-  __yktrace_start_tracing(HW_TRACING, &z, &idx);
+  __yktrace_start_tracing(HW_TRACING, 0);
   NOOPT_VAL(idx);
 
   // Now jump to l2 and then l3 via computed gotos.
@@ -36,16 +36,14 @@ l3:
 
   NOOPT_VAL(z);
   void *tr = __yktrace_stop_tracing();
-  printf("ZZZ %d\n", z);
   assert(z == 3);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *, int *) = (void (*)(int *, int *))ptr;
-  int z2 = 0;
-  int idx2 = argc;
-  func(&z2, &idx2);
-  assert(z2 == 3);
+  z = 0;
+  idx = argc;
+  __yktrace_compiledtrace_exec(ct);
+  assert(z == 3);
 
   return (EXIT_SUCCESS);
 }

@@ -16,21 +16,19 @@ struct s {
 
 int main(int argc, char **argv) {
   struct s s1 = {argc};
-  int y1 = 0;
-  __yktrace_start_tracing(HW_TRACING, &y1, &s1);
+  int y = 0;
+  __yktrace_start_tracing(HW_TRACING, 0);
   NOOPT_VAL(s1);
-  y1 = s1.x;
-  NOOPT_VAL(y1);
+  y = s1.x;
+  NOOPT_VAL(y);
   void *tr = __yktrace_stop_tracing();
-  assert(y1 == 1);
+  assert(y == 1);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *, struct s *) = (void (*)(int *, struct s *))ptr;
-  int y2 = 0;
-  func(&y2, &s1);
-  printf("%d\n", y2);
-  assert(y2 == 1);
+  y = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(y == 1);
 
   return (EXIT_SUCCESS);
 }

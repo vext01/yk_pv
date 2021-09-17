@@ -10,7 +10,8 @@
 #include <yk_testing.h>
 
 int main(int argc, char **argv) {
-  __yktrace_start_tracing(HW_TRACING);
+  __yktrace_start_tracing(HW_TRACING, 0);
+  CLOBBER_MEM();
   void *tr = __yktrace_stop_tracing();
   assert(__yktrace_irtrace_len(tr) == 1);
 

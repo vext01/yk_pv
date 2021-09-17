@@ -23,7 +23,8 @@
 
 int main(int argc, char **argv) {
   int cond = argc;
-  __yktrace_start_tracing(HW_TRACING, &cond);
+  __yktrace_start_tracing(HW_TRACING, 0);
+  NOOPT_VAL(cond);
   int res = 0;
   if (cond) {
     res = 2;
@@ -31,17 +32,17 @@ int main(int argc, char **argv) {
   } else {
     res = 4;
   }
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
 
   assert(cond == 3);
   assert(res == 2);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(void *) = (void (*)(void *))ptr;
-  int output = 0;
-  func(&output);
-  assert(output == 3);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 3);
 
   return (EXIT_SUCCESS);
 }

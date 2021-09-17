@@ -13,14 +13,13 @@
 void __attribute__((noinline)) f() { return; }
 
 int main(int argc, char **argv) {
-  __yktrace_start_tracing(HW_TRACING);
+  __yktrace_start_tracing(HW_TRACING, 0);
   f();
   void *tr = __yktrace_stop_tracing();
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)() = (void (*)())ptr;
-  func();
+  __yktrace_compiledtrace_exec(ct);
 
   return (EXIT_SUCCESS);
 }

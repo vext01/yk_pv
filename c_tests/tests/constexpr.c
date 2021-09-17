@@ -25,17 +25,17 @@ __attribute__((noinline)) char foo(char *str) { return str[0]; }
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, &res);
+  __yktrace_start_tracing(HW_TRACING, 0);
   res = foo("abc");
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
   assert(res == 97);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(void *) = (void (*)(void *))ptr;
-  int output = 0;
-  func(&output);
-  assert(output == 97);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 97);
 
   return (EXIT_SUCCESS);
 }

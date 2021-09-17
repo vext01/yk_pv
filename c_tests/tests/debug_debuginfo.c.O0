@@ -5,7 +5,11 @@
 //     ...
 //     define internal void @__yk_compiled_trace_0(i32* %0) {
 //       ; main() tests/debug_debuginfo.c:14:7
-//       store i32 2, i32* %0, align 4, !dbg...
+//       store i32 2, i32* %0, align 4, !dbg !3
+//       ; main() tests/debug_debuginfo.c:15:3
+//       %2 = load i32, i32* %0, align 4, !dbg !12
+//       call void asm sideeffect "", "=*r|m,0,~{memory},~{dirflag},~{fpsr},~{flags}"(i32* %0, i32 %2) #0, !dbg !12, !srcloc !13
 //       ret void
 //     }
 //     ...
+

@@ -20,17 +20,18 @@ __attribute__((noinline)) int f(int x) {
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, &res, &argc);
+  __yktrace_start_tracing(HW_TRACING, 0);
+  NOOPT_VAL(argc);
   res = f(argc);
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
   assert(res == 47);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(int *, int *) = (void (*)(int *, int *))ptr;
-  int res2 = 0;
-  func(&res2, &argc);
-  assert(res2 == 47);
+  res = 0;
+  __yktrace_compiledtrace_exec(ct);
+  assert(res == 47);
 
   return (EXIT_SUCCESS);
 }

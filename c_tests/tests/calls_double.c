@@ -3,14 +3,15 @@
 //   env-var: YKD_PRINT_IR=jit-pre-opt
 //   stderr:
 //     ...
-//     define internal void @__yk_compiled_trace_0(i32* %0) {
+//     define internal void @__yk_compiled_trace_0(...
 //       ...
-//       store i32 3, i32* %0, align 4...
+//       store i32 333, i32* %...
+//       ...
 //       ret void
 //     }
 //     ...
 
-// Check that basic trace compilation works.
+// Check that tracing function calls in sequence works.
 
 #include <assert.h>
 #include <stdio.h>
@@ -22,19 +23,22 @@ __attribute__((noinline)) int f(a) { return a; }
 
 int main(int argc, char **argv) {
   int res = 0;
-  __yktrace_start_tracing(HW_TRACING, &res);
-  int a = f(1);
-  int b = f(2);
+  __yktrace_start_tracing(HW_TRACING, 0);
+  int a = f(111);
+  int b = f(222);
   res = a + b;
+  NOOPT_VAL(res);
   void *tr = __yktrace_stop_tracing();
-  assert(res == 3);
+  assert(res == 333);
 
-  void *ptr = __yktrace_irtrace_compile(tr);
+  void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
-  void (*func)(void *) = (void (*)(void *))ptr;
-  int output = 0;
-  func(&output);
-  assert(output == 3);
+  res = 0;
+  a = 0;
+  b = 0;
+  __yktrace_compiledtrace_exec(ct);
+  printf("%d\n", res);
+  assert(res == 333);
 
   return (EXIT_SUCCESS);
 }
