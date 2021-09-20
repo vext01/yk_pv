@@ -3,13 +3,12 @@
 //   env-var: YKD_PRINT_IR=jit-pre-opt
 //   stderr:
 //     ...
-//     define internal void @__yk_compiled_trace_0(i32* %0) {
+//     define internal void @__yk_compiled_trace_0(...
 //       ...
-//       %2 = load i32, i32* %0, align 4...
-//       %3 = icmp eq i32 %2, 0...
+//       ...= icmp...
 //       ...
-//       store i32 3, i32* %0, align 4...
-//       ret void
+//       store i32 3, i32* %...
+//       ...
 //     }
 //     ...
 
@@ -26,13 +25,14 @@ int main(int argc, char **argv) {
   __yktrace_start_tracing(HW_TRACING, 0);
   NOOPT_VAL(cond);
   int res = 0;
-  if (cond) {
+  if (cond == 1) {
     res = 2;
     cond = 3;
   } else {
     res = 4;
   }
   NOOPT_VAL(res);
+  NOOPT_VAL(cond);
   void *tr = __yktrace_stop_tracing();
 
   assert(cond == 3);
@@ -41,8 +41,11 @@ int main(int argc, char **argv) {
   void *ct = __yktrace_irtrace_compile(tr);
   __yktrace_drop_irtrace(tr);
   res = 0;
+  cond = argc;
   __yktrace_compiledtrace_exec(ct);
-  assert(res == 3);
+  printf("XX: %d %d\n", cond, res);
+  assert(cond == 3);
+  assert(res == 2);
 
   return (EXIT_SUCCESS);
 }
