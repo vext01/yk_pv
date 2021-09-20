@@ -341,6 +341,8 @@ class JITModBuilder {
           return G == VMap[CG];
         });
         G->eraseFromParent();
+      } else if (isa<Argument>(V)) {
+        continue;
       } else {
         dumpValueAndExit("Unexpected Value", V);
       }
