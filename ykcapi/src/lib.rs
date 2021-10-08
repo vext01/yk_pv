@@ -79,7 +79,7 @@ mod c_testing {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn __yktrace_start_tracing(kind: usize, ...) {
+    pub unsafe extern "C" fn __yktrace_start_tracing(kind: usize) {
         let kind = black_box(kind);
         let kind: TracingKind = match kind {
             SW_TRACING => TracingKind::SoftwareTracing,

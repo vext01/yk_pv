@@ -14,7 +14,7 @@ uint64_t getNewTraceIdx() {
 }
 
 #define TRACE_FUNC_PREFIX "__yk_compiled_trace_"
-#define YKTRACE_START "__yktrace_start_tracing"
+#define YKTRACE_START "new_control_point"
 #define YKTRACE_STOP "__yktrace_stop_tracing"
 
 // Dump an error message and an LLVM value to stderr and exit with failure.
@@ -98,31 +98,21 @@ public:
 };
 
 std::vector<Value *> getTraceInputs(Module *AOTMod, InputTrace &InpTrace) {
+  AOTMod->dump();
   std::vector<Value *> Vec;
-  IRBlock FirstBlock = InpTrace.getUnchecked(0);
-  Function *F = AOTMod->getFunction(FirstBlock.FuncName);
-  auto It = F->begin();
-  // Skip to the first block in the trace which contains the `start_tracing`
-  // call.
-  std::advance(It, FirstBlock.BBIdx);
-  BasicBlock *BB = &*It;
-  bool found = false;
-  for (auto I = BB->begin(); I != BB->end(); I++) {
-    if (isa<CallInst>(I)) {
-      CallInst *CI = cast<CallInst>(&*I);
-      Function *CF = CI->getCalledFunction();
-      if ((CF != nullptr) && (CF->getName() == YKTRACE_START)) {
-        // Skip first argument to start_tracing.
-        for (auto Arg = CI->arg_begin() + 1; Arg != CI->arg_end(); Arg++) {
-          Vec.push_back(Arg->get());
-        }
-        found = true;
-        break;
-      }
-    }
+  Function *F = AOTMod->getFunction("new_control_point");
+  assert(F != nullptr);
+  User *CallSite = F->user_back();
+  //assert(CallSite != F->user_end());
+  //assert(isa<CallInst>(CallSite));
+  CallInst *CI = cast<CallInst>(CallSite);
+  CI->dump();
+
+  for (auto *Arg = CI->arg_begin() + 1; Arg != CI->arg_end(); Arg++) {
+    errs() << "getTraceiNpout: ";
+    Arg->get()->dump();
+    Vec.push_back(Arg->get());
   }
-  if (!found)
-    errx(EXIT_FAILURE, "failed to find trace inputs");
   return Vec;
 }
 
@@ -164,6 +154,7 @@ class JITModBuilder {
     if (VMap.find(V) != VMap.end()) {
       return VMap[V];
     }
+    V->dump();
     assert(isa<Constant>(V));
     return V;
   }
@@ -199,7 +190,10 @@ class JITModBuilder {
   }
 
   void handleCallInst(CallInst *CI, Function *CF, size_t &CurInstrIdx) {
+    errs() << "handleCallinst:";
+    CI->dump();
     if (CF == nullptr || CF->isDeclaration()) {
+      errs() << "here1\n";
       // The definition of the callee is external to AOTMod. We still
       // need to declare it locally if we have not done so yet.
       if (CF != nullptr && VMap.find(CF) == VMap.end()) {
@@ -214,6 +208,7 @@ class JITModBuilder {
       ExpectUnmappable = true;
       ResumeAfter = make_tuple(CurInstrIdx, CI);
     } else {
+      errs() << "here2\n";
       if (RecCallDepth > 0) {
         // When outlining a recursive function, we need to count all other
         // function calls so we know when we left the recusion.
@@ -243,6 +238,7 @@ class JITModBuilder {
         handleOperand(Var);
         // If the operand has already been cloned into JITMod then we
         // need to use the cloned value in the VMap.
+              errs() << "getMapped3\n";
         VMap[Arg] = getMappedValue(Var);
       }
     }
@@ -261,21 +257,24 @@ class JITModBuilder {
     auto OldRetVal = ((ReturnInst *)&*I)->getReturnValue();
     if (OldRetVal != nullptr) {
       assert(ResumeAfter.hasValue());
+              errs() << "getMapped4\n";
       VMap[get<1>(ResumeAfter.getValue())] = getMappedValue(OldRetVal);
     }
   }
 
   // FIXME: https://github.com/ykjit/yk/issues/394
   void handlePHINode(Instruction *I, Function *F, size_t Idx) {
+    I->dump();
     assert(Idx > 0);
     auto LBIt = F->begin();
     std::advance(LBIt, InpTrace.getUnchecked(Idx - 1).BBIdx);
     BasicBlock *LastBlock = &*LBIt;
     Value *V = ((PHINode *)&*I)->getIncomingValueForBlock(LastBlock);
+              errs() << "getMapped5\n";
     VMap[&*I] = getMappedValue(V);
   }
 
-  Function *createJITFunc(vector<Value *> *TraceInputs) {
+  Function *createJITFunc(vector<Value *> *TraceInputs, Type *RetTy) {
     // Compute a name for the trace.
     uint64_t TraceIdx = getNewTraceIdx();
     TraceName = string(TRACE_FUNC_PREFIX) + to_string(TraceIdx);
@@ -285,7 +284,7 @@ class JITModBuilder {
     for (auto Val : *TraceInputs)
       InputTypes.push_back(Val->getType());
     llvm::FunctionType *FType = llvm::FunctionType::get(
-        Type::getVoidTy(JITMod->getContext()), InputTypes, false);
+        RetTy, InputTypes, false);
     llvm::Function *JITFunc = llvm::Function::Create(
         FType, Function::InternalLinkage, TraceName, JITMod);
     JITFunc->setCallingConv(CallingConv::C);
@@ -301,7 +300,7 @@ class JITModBuilder {
     for (size_t Idx = 0; Idx < TraceInputs.size(); Idx++) {
       Value *OldVal = TraceInputs[Idx];
       Value *NewVal = JITFunc->getArg(Idx);
-      assert(NewVal->getType()->isPointerTy());
+      //assert(NewVal->getType()->isPointerTy());
       VMap[OldVal] = NewVal;
     }
   }
@@ -371,8 +370,19 @@ public:
     // Find the trace inputs.
     vector<Value *> TraceInputs = getTraceInputs(AOTMod, InpTrace);
 
+    // Get new control point call.
+    Function *F = AOTMod->getFunction("new_control_point");
+    User *CallSite = F->user_back();
+    CallInst *CPCI = cast<CallInst>(CallSite);
+
     // Create function to store compiled trace.
-    Function *JITFunc = createJITFunc(&TraceInputs);
+    Function *JITFunc = createJITFunc(&TraceInputs, CPCI->getType());
+    JITFunc->dump();
+
+    // Remap contorl_point return value.
+    CPCI->dump();
+    JITFunc->getArg(0)->dump();
+    VMap[CPCI] = JITFunc->getArg(0);
 
     // Add entries to the VMap for variables defined outside of the trace.
     mapTraceInputs(TraceInputs, JITFunc);
@@ -384,17 +394,25 @@ public:
     // Iterate over the trace and stitch together all traced blocks.
     for (size_t Idx = 0; Idx < InpTrace.Length(); Idx++) {
       Optional<IRBlock> MaybeIB = InpTrace[Idx];
+            errs() << MaybeIB.hasValue() << " <<<\n";
       if (ExpectUnmappable && !MaybeIB.hasValue()) {
         ExpectUnmappable = false;
+        errs() << "skip block\n";
         continue;
       }
       assert(MaybeIB.hasValue());
       IRBlock IB = MaybeIB.getValue();
 
+      errs() << IB.FuncName << " -- " << IB.BBIdx << "\n";
+
       // Get a traced function so we can extract blocks from it.
       Function *F = AOTMod->getFunction(IB.FuncName);
       if (!F)
         errx(EXIT_FAILURE, "can't find function %s", IB.FuncName);
+
+      if (F->getName() == "new_control_point") {
+        continue;
+      }
 
       // Skip to the correct block.
       auto It = F->begin();
@@ -406,13 +424,18 @@ public:
       for (size_t CurInstrIdx = 0; CurInstrIdx < BB->size(); CurInstrIdx++) {
         // If we've returned from a call, skip ahead to the instruction where
         // we left off.
+        errs() << "Before resume\n";
         if (ResumeAfter.hasValue() != 0) {
+            errs() << "farts\n";
           CurInstrIdx = std::get<0>(ResumeAfter.getValue()) + 1;
           ResumeAfter.reset();
         }
+        errs() << "Advance\n";
         auto I = BB->begin();
         std::advance(I, CurInstrIdx);
         assert(I != BB->end());
+        errs() << "Current inst:";
+        I->dump();
 
         // Skip calls to debug intrinsics (e.g. @llvm.dbg.value). We don't
         // currently handle debug info and these "pseudo-calls" cause our blocks
@@ -443,7 +466,14 @@ public:
               break;
             }
           } else if (CF->getName() == YKTRACE_START) {
-            StartTracingInstr = &*CI;
+            if (StartTracingInstr == nullptr) {
+              StartTracingInstr = &*CI;
+            } else {
+              errs() << "getMapped1\n";
+              VMap[CI] = getMappedValue(CI->getArgOperand(1));
+              ResumeAfter = make_tuple(CurInstrIdx, CI);
+              break;
+            }
             continue;
           } else if (CF->getName() == YKTRACE_STOP) {
             finalise(AOTMod, &Builder);
@@ -498,8 +528,18 @@ public:
         // If execution reaches here, then the instruction I is to be copied
         // into JITMod.
         copyInstruction(&Builder, (Instruction *)&*I);
+        errs() << "after copy:";
+        VMap[CPCI]->dump();
+        errs() << CPCI << " " << &*I << "\n";
       }
     }
+
+    Builder.CreateRet(VMap[CPCI]);
+    errs() << "FELL OUT!\n";
+
+    finalise(AOTMod, &Builder);
+    return JITMod;
+    //JITMod->dump();
 
     // If we fell out of the loop, then we never saw YKTRACE_STOP.
     return NULL;
@@ -533,6 +573,7 @@ public:
              CEOpIdx++) {
           Value *CEOp = CExpr->getOperand(CEOpIdx);
           handleOperand(CEOp);
+              errs() << "getMapped2\n";
           NewCEOps.push_back(cast<Constant>(getMappedValue(CEOp)));
         }
         Constant *NewCExpr = CExpr->getWithOperands(NewCEOps);
@@ -577,6 +618,8 @@ public:
   }
 
   void copyInstruction(IRBuilder<> *Builder, Instruction *I) {
+    errs() << "Copy: ";
+    I->dump();
     // Before copying an instruction, we have to scan the instruction's
     // operands checking that each is defined in JITMod.
     for (unsigned OpIdx = 0; OpIdx < I->getNumOperands(); OpIdx++) {
@@ -603,12 +646,13 @@ public:
 
     // And finally insert the new instruction into the JIT module.
     Builder->Insert(NewInst);
+    NewInst->dump();
   }
 
   // Finalise the JITModule by adding a return instruction and initialising
   // global variables.
   void finalise(Module *AOTMod, IRBuilder<> *Builder) {
-    Builder->CreateRetVoid();
+    //Builder->CreateRetVoid();
 
     // Now that we've seen all possible uses of values in the JITMod, we can
     // delete the values we've marked dead (and possibly their dependencies if
