@@ -267,9 +267,7 @@ extern "C" void *__ykllvmwrap_irtrace_compile(char *FuncNames[], size_t BBs[],
   JITMod->dump();
   DIP.print(DebugIR::JITPreOpt, JITMod);
 #ifndef NDEBUG
-  errs() << "VERIFY\n";
   llvm::verifyModule(*JITMod, &llvm::errs());
-  errs() << "/VERIFY\n";
 #endif
 
   // The MCJIT code-gen does no optimisations itself, so we must do it

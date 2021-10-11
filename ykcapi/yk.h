@@ -30,31 +30,34 @@ typedef uint32_t YkHotThreshold;
 #error Unable to determine type of HotThreshold
 #endif
 
+void control_point(int);
+
+// FIXME
 // Return a reference to the global `MT` instance: at any point, there is at
 // most one of these per process and an instance will be created if it does not
 // already exist.
-YkMT *yk_mt(void);
-
-// Return this `MT` instance's current hot threshold. Notice that this value
-// can be changed by other threads and is thus potentially stale as soon as it
-// is read.
-YkHotThreshold yk_mt_hot_threshold(YkMT *);
-
-// Attempt to execute a compiled trace for location `loc`. `NULL` may be passed
-// to `loc` to indicate that this particular point in the user's program cannot
-// ever be the beginning of a trace.
-void yk_control_point(YkMT *, YkLocation *);
-
-// Create a new `Location`.
+//YkMT *yk_mt(void);
 //
-// Note that a `Location` created by this call must not simply be discarded: if
-// no longer wanted, it must be passed to `yk_drop_location` to allow
-// appropriate clean-up.
-YkLocation yk_location_new(void);
-
-// Clean-up a `Location` previously created by `yk_new_location`. The
-// `Location` must not be further used after this call or undefined behaviour
-// will occur.
-void yk_location_drop(YkLocation);
+//// Return this `MT` instance's current hot threshold. Notice that this value
+//// can be changed by other threads and is thus potentially stale as soon as it
+//// is read.
+//YkHotThreshold yk_mt_hot_threshold(YkMT *);
+//
+//// Attempt to execute a compiled trace for location `loc`. `NULL` may be passed
+//// to `loc` to indicate that this particular point in the user's program cannot
+//// ever be the beginning of a trace.
+//void yk_control_point(YkMT *, YkLocation *);
+//
+//// Create a new `Location`.
+////
+//// Note that a `Location` created by this call must not simply be discarded: if
+//// no longer wanted, it must be passed to `yk_drop_location` to allow
+//// appropriate clean-up.
+//YkLocation yk_location_new(void);
+//
+//// Clean-up a `Location` previously created by `yk_new_location`. The
+//// `Location` must not be further used after this call or undefined behaviour
+//// will occur.
+//void yk_location_drop(YkLocation);
 
 #endif

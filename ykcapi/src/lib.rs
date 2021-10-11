@@ -9,38 +9,46 @@
 #![feature(bench_black_box)]
 #![feature(c_variadic)]
 
-use std::{ffi::c_void, mem::drop};
+use std::{ffi::c_void, mem::drop, os::raw::c_int};
 use ykrt::{HotThreshold, Location, MT};
 use ykutil;
 
+// FIXME comments.
+// FIXME for now the "location identifiers" are assumed to be `int`.
 #[no_mangle]
-pub extern "C" fn yk_mt() -> *const MT {
-    MT::global()
+pub extern "C" fn control_point(loc: c_int) {
+    // Intentionally empty.
 }
 
-#[no_mangle]
-pub extern "C" fn yk_mt_hot_threshold(mt: *mut MT) -> HotThreshold {
-    unsafe { &*mt }.hot_threshold()
-}
-
-#[no_mangle]
-pub extern "C" fn yk_control_point(mt: *mut MT, loc: *mut Location) {
-    if !loc.is_null() {
-        unsafe { (&*mt).control_point(Some(&*loc)) };
-    } else {
-        unsafe { (&*mt).control_point(None) };
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn yk_location_new() -> Location {
-    Location::new()
-}
-
-#[no_mangle]
-pub extern "C" fn yk_location_drop(loc: Location) {
-    drop(loc)
-}
+// FIXME throw out all old control point stuff?
+// #[no_mangle]
+// pub extern "C" fn yk_mt() -> *const MT {
+//     MT::global()
+// }
+//
+// #[no_mangle]
+// pub extern "C" fn yk_mt_hot_threshold(mt: *mut MT) -> HotThreshold {
+//     unsafe { &*mt }.hot_threshold()
+// }
+//
+// #[no_mangle]
+// pub extern "C" fn yk_control_point(mt: *mut MT, loc: *mut Location) {
+//     if !loc.is_null() {
+//         unsafe { (&*mt).control_point(Some(&*loc)) };
+//     } else {
+//         unsafe { (&*mt).control_point(None) };
+//     }
+// }
+//
+// #[no_mangle]
+// pub extern "C" fn yk_location_new() -> Location {
+//     Location::new()
+// }
+//
+// #[no_mangle]
+// pub extern "C" fn yk_location_drop(loc: Location) {
+//     drop(loc)
+// }
 
 /// Return a pointer to (and the size of) the .llvmbc section of the current executable.
 #[no_mangle]
