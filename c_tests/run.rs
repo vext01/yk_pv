@@ -1,5 +1,6 @@
 use lang_tester::LangTester;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::{
     collections::HashMap,
     env,
@@ -169,6 +170,12 @@ fn run_suite(opt: &'static str) {
             let runtime = Command::new(exe.clone());
             vec![("Compiler", compiler), ("Run-time", runtime)]
         })
+        .fm_options(|_, _, fmb| {
+            // Use `%%` to match non-literal LLVM variables in tests.
+            let ptn_re = Regex::new(r"%%.+?\b").unwrap();
+            let text_re = Regex::new(r"%.+?\b").unwrap();
+            fmb.name_matcher(ptn_re, text_re)
+        })
         .run();
 }
 
@@ -176,10 +183,10 @@ fn main() {
     // Run the suite with the various different clang optimisation levels. We do this to maximise
     // the possibility of shaking out bugs (in both the JIT and the tests themselves).
     run_suite("-O0");
-    //run_suite("-O1");
-    //run_suite("-O2");
+    run_suite("-O1");
+    run_suite("-O2");
     run_suite("-O3");
-    //run_suite("-Ofast");
-    //run_suite("-Os");
-    //run_suite("-Oz");
+    run_suite("-Ofast");
+    run_suite("-Os");
+    run_suite("-Oz");
 }
