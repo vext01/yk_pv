@@ -154,7 +154,6 @@ class JITModBuilder {
     if (VMap.find(V) != VMap.end()) {
       return VMap[V];
     }
-    V->dump();
     assert(isa<Constant>(V));
     return V;
   }
@@ -190,10 +189,7 @@ class JITModBuilder {
   }
 
   void handleCallInst(CallInst *CI, Function *CF, size_t &CurInstrIdx) {
-    errs() << "handleCallinst:";
-    CI->dump();
     if (CF == nullptr || CF->isDeclaration()) {
-      errs() << "here1\n";
       // The definition of the callee is external to AOTMod. We still
       // need to declare it locally if we have not done so yet.
       if (CF != nullptr && VMap.find(CF) == VMap.end()) {
@@ -208,7 +204,6 @@ class JITModBuilder {
       ExpectUnmappable = true;
       ResumeAfter = make_tuple(CurInstrIdx, CI);
     } else {
-      errs() << "here2\n";
       if (RecCallDepth > 0) {
         // When outlining a recursive function, we need to count all other
         // function calls so we know when we left the recusion.
@@ -238,7 +233,6 @@ class JITModBuilder {
         handleOperand(Var);
         // If the operand has already been cloned into JITMod then we
         // need to use the cloned value in the VMap.
-              errs() << "getMapped3\n";
         VMap[Arg] = getMappedValue(Var);
       }
     }
@@ -257,7 +251,6 @@ class JITModBuilder {
     auto OldRetVal = ((ReturnInst *)&*I)->getReturnValue();
     if (OldRetVal != nullptr) {
       assert(ResumeAfter.hasValue());
-              errs() << "getMapped4\n";
       VMap[get<1>(ResumeAfter.getValue())] = getMappedValue(OldRetVal);
     }
   }
@@ -270,7 +263,6 @@ class JITModBuilder {
     std::advance(LBIt, InpTrace.getUnchecked(Idx - 1).BBIdx);
     BasicBlock *LastBlock = &*LBIt;
     Value *V = ((PHINode *)&*I)->getIncomingValueForBlock(LastBlock);
-              errs() << "getMapped5\n";
     VMap[&*I] = getMappedValue(V);
   }
 
@@ -374,6 +366,38 @@ public:
     Function *F = AOTMod->getFunction("new_control_point");
     User *CallSite = F->user_back();
     CallInst *CPCI = cast<CallInst>(CallSite);
+    Type *OutputStructTy = CPCI->getType();
+
+    // Get extractvalue statements
+    std::map<uint64_t, Value *> OutMap;
+    //errs() << "!!!! GET USES!!!\n";
+
+    //// FIXME: too early. need to wait for any mappings the trace might create.
+    //// Easier: remove all insertvalue/extractvalue stuff apart from the first
+    //// extravalue set at the beginning. then generate the output struct
+    //// manually at the end of the trace.
+    //Value *OutS = CPCI->getArgOperand(1);
+    //while (1) {
+    //  if (!isa<InsertValueInst>(OutS)) {
+    //    break;
+    //  }
+    //  InsertValueInst *IVI = cast<InsertValueInst>(OutS);
+    //  uint64_t idx = *IVI->idx_begin();
+    //  errs() << "remap:\n";
+    //  IVI->dump();
+    //  OutMap[idx]->dump();
+    //  //VMap[IVI->getInsertedValueOperand()] = OutMap[idx];
+    //  OutS = IVI->getAggregateOperand();
+    //}
+    //
+
+    errs() << "PREVIEW:\n";
+    for (size_t Idx = 0; Idx < InpTrace.Length(); Idx++) {
+      Optional<IRBlock> MaybeIB = InpTrace[Idx];
+      IRBlock IB = MaybeIB.getValue();
+      errs() << IB.FuncName << " -- " << IB.BBIdx << "\n";
+    }
+
 
     // Create function to store compiled trace.
     Function *JITFunc = createJITFunc(&TraceInputs, CPCI->getType());
@@ -394,7 +418,6 @@ public:
     // Iterate over the trace and stitch together all traced blocks.
     for (size_t Idx = 0; Idx < InpTrace.Length(); Idx++) {
       Optional<IRBlock> MaybeIB = InpTrace[Idx];
-            errs() << MaybeIB.hasValue() << " <<<\n";
       if (ExpectUnmappable && !MaybeIB.hasValue()) {
         ExpectUnmappable = false;
         errs() << "skip block\n";
@@ -424,18 +447,45 @@ public:
       for (size_t CurInstrIdx = 0; CurInstrIdx < BB->size(); CurInstrIdx++) {
         // If we've returned from a call, skip ahead to the instruction where
         // we left off.
-        errs() << "Before resume\n";
         if (ResumeAfter.hasValue() != 0) {
-            errs() << "farts\n";
           CurInstrIdx = std::get<0>(ResumeAfter.getValue()) + 1;
           ResumeAfter.reset();
         }
-        errs() << "Advance\n";
         auto I = BB->begin();
         std::advance(I, CurInstrIdx);
         assert(I != BB->end());
         errs() << "Current inst:";
         I->dump();
+
+        // Remap instructions relating to the OutputStruct
+        // A trace starts after a call to control_point and then loops around
+        // until it stops just before the next call to control_point. This
+        // means that the insertvalue instructions which prepare the
+        // OutputStruct for the control point (which are the same instructions
+        // preparing the output struct for returning from the trace), may still
+        // reference values from preceding blocks not seen during tracing (i.e.
+        // alloca values). We thus need to remap those values to their
+        // corresponding values from the extractvalue instructions which follow
+        // the control point.
+
+        if (isa<ExtractValueInst>(I)) {
+          ExtractValueInst *EVI = cast<ExtractValueInst>(I);
+          if (EVI->getAggregateOperand()->getType() == OutputStructTy) {
+            OutMap.insert({*EVI->idx_begin(), EVI});
+          }
+        }
+
+        if (isa<InsertValueInst>(I)) {
+          InsertValueInst *IVI = cast<InsertValueInst>(I);
+          if (IVI->getAggregateOperand()->getType() == OutputStructTy) {
+            size_t idx = *IVI->idx_begin();
+            if(OutMap.find(idx) != OutMap.end()) {
+              if (!isa<PHINode>(IVI->getInsertedValueOperand())) {
+                VMap[IVI->getInsertedValueOperand()] = getMappedValue(OutMap[idx]);
+              }
+            }
+          }
+        }
 
         // Skip calls to debug intrinsics (e.g. @llvm.dbg.value). We don't
         // currently handle debug info and these "pseudo-calls" cause our blocks
@@ -469,7 +519,6 @@ public:
             if (StartTracingInstr == nullptr) {
               StartTracingInstr = &*CI;
             } else {
-              errs() << "getMapped1\n";
               VMap[CI] = getMappedValue(CI->getArgOperand(1));
               ResumeAfter = make_tuple(CurInstrIdx, CI);
               break;
@@ -528,9 +577,6 @@ public:
         // If execution reaches here, then the instruction I is to be copied
         // into JITMod.
         copyInstruction(&Builder, (Instruction *)&*I);
-        errs() << "after copy:";
-        VMap[CPCI]->dump();
-        errs() << CPCI << " " << &*I << "\n";
       }
     }
 
@@ -562,6 +608,7 @@ public:
         Value *Alloca = Builder.CreateAlloca(OpTy->getPointerElementType(),
                                              OpTy->getPointerAddressSpace());
         VMap[Op] = Alloca;
+        errs() << "Warning: undefined alloca found. This should have been passed in via the OutputStruct.\n";
       } else if (isa<ConstantExpr>(Op)) {
         // A `ConstantExpr` may contain operands that require remapping, e.g.
         // global variables. Iterate over all operands and recursively call

@@ -136,10 +136,17 @@ impl HWTMapper {
                         // same basic block or if we are executing the next machine basic block for
                         // that same block. In the latter case, we mustn't record the block in the
                         // trace again.
+                        eprintln!("first instr: {:x}", block.first_instr());
+                        if let Some(b) = &prev_block {
+                        eprintln!("first instr: {:x}", b.first_instr());
+                        }
+
                         if !(ret_irblocks.last() == Some(&irblock)
                             && prev_block.as_ref().map(|x| x.first_instr())
                                 != Some(block.first_instr()))
                         {
+                            // FIXME not always correct
+                            eprintln!("take this: {:?}", &irblock);
                             ret_irblocks.push(irblock);
                         }
                     } else {
@@ -154,6 +161,7 @@ impl HWTMapper {
                     }
                 }
             }
+            eprintln!("prev_block = {:x}", block.first_instr());
             prev_block = Some(block);
         }
         // Strip any trailing unmappable blocks.
@@ -241,6 +249,9 @@ impl HWTMapper {
             .query(block_off, block_off + block_len)
             .collect::<Vec<_>>();
 
+        eprintln!("{:x} {:x}", block_off, block_off + block_len);
+        eprintln!("{:?}", ents);
+
         // In the case that a PT block maps to multiple machine blocks, it may be tempting to check
         // that they are at consecutive address ranges. Unfortunately we can't do this because LLVM
         // sometimes appends `nop` sleds (e.g. `nop word cs:[rax + rax]; nop`) to the ends of
@@ -256,6 +267,7 @@ impl HWTMapper {
                         .insert(func_name.clone(), func_vaddr as *const c_void);
                 }
                 for bb in &ent.value.corr_bbs {
+                    eprintln!("add {:?}", &ent.value.corr_bbs);
                     ret.push(Some(IRBlock {
                         func_name: func_name.clone(),
                         bb: usize::try_from(*bb).unwrap(),
@@ -265,6 +277,7 @@ impl HWTMapper {
                 ret.push(None);
             }
         }
+        eprintln!("ret: {:?}", &ret);
         ret
     }
 }

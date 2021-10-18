@@ -37,6 +37,7 @@ main(int argc, char **argv)
     control_point(pc);
 
     int bc = prog[pc];
+    printf("%d\n", pc);
     switch (bc) {
       case NOP:
         pc++;
@@ -46,7 +47,7 @@ main(int argc, char **argv)
         pc++;
         break;
       case RESTART_IF_NOT_ZERO:
-        if (mem != 0)
+        if (mem > 0)
           pc = 0;
         else
           pc++;
@@ -61,5 +62,6 @@ main(int argc, char **argv)
 done:
   assert(mem == 0);
   assert(pc == 5);
+  assert(0);
   return (EXIT_SUCCESS);
 }

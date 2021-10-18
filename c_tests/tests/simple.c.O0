@@ -1,12 +1,17 @@
 // Compiler:
+//   env-var: YKD_PRINT_JITSTATE=1
 // Run-time:
 //   env-var: YKD_PRINT_IR=jit-pre-opt
+//   stdout:
+//     Start tracing
+//     Stop tracing
+//     Enter JIT code
+//     Leave JIT code
 //   stderr:
 //     ...
-//     define internal void @__yk_compiled_trace_0(i32* %0) {
+//     define internal %OutputStruct @__yk_compiled_trace_0(%OutputStruct %0) {
 //       ...
-//       store i32 2, i32* %0, align 4...
+//       %14 = add nsw i32 %13, 2...
 //       ...
-//       ret void
 //     }
 //     ...

@@ -175,7 +175,7 @@ fn run_suite(opt: &'static str) {
 fn main() {
     // Run the suite with the various different clang optimisation levels. We do this to maximise
     // the possibility of shaking out bugs (in both the JIT and the tests themselves).
-    //run_suite("-O0");
+    run_suite("-O0");
     //run_suite("-O1");
     //run_suite("-O2");
     run_suite("-O3");
