@@ -1,8 +1,10 @@
+use libc::dlsym;
+use libffi::middle::{arg as ffi_arg, Arg as FFIArg, Builder as FFIBuilder, CodePtr as FFICodePtr};
 use llvm_sys::core::*;
 use llvm_sys::target::{LLVMABISizeOfType, LLVMOffsetOfElement};
 use llvm_sys::{LLVMOpcode, LLVMTypeKind};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::ffi::{c_void, CStr};
 use std::ptr;
 
@@ -283,7 +285,8 @@ impl SGInterp {
     /// Implement call instructions. Returns `true` if the control point has been reached,
     /// `false` otherwise.
     unsafe fn call(&mut self) -> bool {
-        let func = LLVMGetCalledValue(self.pc.get());
+        let call_inst = self.pc.get();
+        let func = LLVMGetCalledValue(call_inst);
         if !LLVMIsAInlineAsm(func).is_null() {
             // FIXME: Implement calls to inline asm. Just skip them for now, as our tests won't run
             // otherwise.
@@ -313,8 +316,68 @@ impl SGInterp {
             // FIXME: When we see the control point we are done and can just return.
             return true;
         } else {
-            // FIXME: Properly implement calls.
-            todo!()
+            // We are going to do a native call via libffi, starting with looking up the address of
+            // the callee in the virtual address space.
+            //
+            // OPT: This could benefit from caching, and we may already know the address of the
+            // callee if we inlined it when preparing traces:
+            // https://github.com/ykjit/yk/issues/544
+            assert!(!LLVMIsAFunction(func).is_null());
+            let fptr = dlsym(ptr::null_mut(), name.as_ptr() as *const i8);
+            if fptr == ptr::null_mut() {
+                todo!("couldn't find symbol: {}", name);
+            }
+
+            if LLVMIsFunctionVarArg(LLVMGetElementType(LLVMTypeOf(func))) != 0 {
+                todo!("calling a varargs function");
+            }
+
+            // Now build the calling interface and collect the values of the callee's arguments.
+            //
+            // It may be tempting to use `LLVMGetArgOperand()` to extract callee operands from our
+            // `CallInst`, but at the time of writing this wraps the C++ method
+            // `FuncletPadInst::getArgOperand()` which is not what we want.
+            //
+            // `CallBase::getArgOperand()` isn't currently exposed by the LLVM C API, so we instead
+            // use the implicit knowledge that for a `CallInst` the first `N` operands are the
+            // operands of the function being called (the remaining operand is the callee).
+            //
+            // Despite this, `LLVMGetNumArgOperands()` *is* generic and does the right thing for
+            // any callable function-like thing, so we can still use that for the loop bounds.
+            let mut builder = FFIBuilder::new();
+            let mut arg_vals = Vec::new();
+            for i in 0..LLVMGetNumArgOperands(call_inst) {
+                let arg = Value::new(LLVMGetOperand(call_inst, i.try_into().unwrap()));
+                builder = builder.arg(arg.get_ffi_type());
+                // Note that a `FFIArg()` is unsafe in that caches a raw pointer to something which
+                // may later die. Converting to `FFIArg()` in this loop would cause UB later
+                // because `&self.var_lookup(&arg).val as *const _` would be a dangling pointer
+                // once the loop body ends.
+                arg_vals.push(self.var_lookup(&arg).val);
+            }
+            let ret_val = Value::new(call_inst);
+            builder = builder.res(ret_val.get_ffi_type());
+            let cif = builder.into_cif(); // OPT: cache CIFs for repeated calls to same func sig.
+
+            // Actually do the call.
+            let ret_ty = ret_val.get_type();
+            let ffi_arg_vals: Vec<FFIArg> = arg_vals.iter().map(|a| ffi_arg(a)).collect();
+            if ret_ty.is_integer() {
+                // FIXME: https://github.com/ykjit/yk/issues/536
+                match ret_ty.get_int_width() {
+                    32 => {
+                        let rv = cif.call::<u32>(FFICodePtr(fptr), &ffi_arg_vals) as u64;
+                        self.var_set(self.pc, SGValue::new(rv, ret_ty));
+                    }
+                    _ => todo!(),
+                }
+            } else if ret_ty.is_void() {
+                dbg!(&arg_vals);
+                cif.call::<()>(FFICodePtr(fptr), &ffi_arg_vals);
+            } else {
+                todo!("{:?}", ret_ty.as_str());
+            };
+            return false;
         }
     }
 

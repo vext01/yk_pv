@@ -1,4 +1,5 @@
 use crate::SGValue;
+use libffi::middle::Type as FFIType;
 use llvm_sys::bit_reader::LLVMParseBitcodeInContext2;
 use llvm_sys::core::*;
 use llvm_sys::prelude::{LLVMBasicBlockRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef};
@@ -112,6 +113,10 @@ impl Type {
         matches!(self.kind(), LLVMTypeKind::LLVMIntegerTypeKind)
     }
 
+    pub fn is_void(&self) -> bool {
+        matches!(self.kind(), LLVMTypeKind::LLVMVoidTypeKind)
+    }
+
     pub fn get_int_width(&self) -> u32 {
         debug_assert!(self.is_integer());
         unsafe { LLVMGetIntTypeWidth(self.0) }
@@ -119,6 +124,24 @@ impl Type {
 
     pub fn as_str(&self) -> &CStr {
         unsafe { CStr::from_ptr(LLVMPrintTypeToString(self.0)) }
+    }
+
+    /// Converts an LLVM type into a libffi type.
+    pub fn ffi_type(&self) -> FFIType {
+        match unsafe { LLVMGetTypeKind(self.0) } {
+            LLVMTypeKind::LLVMIntegerTypeKind => {
+                // FIXME: https://github.com/ykjit/yk/issues/536
+                match unsafe { LLVMGetIntTypeWidth(self.0) } {
+                    8 => FFIType::u8(),
+                    16 => FFIType::u16(),
+                    32 => FFIType::u32(),
+                    64 => FFIType::u64(),
+                    _ => todo!(),
+                }
+            }
+            LLVMTypeKind::LLVMVoidTypeKind => FFIType::void(),
+            _ => todo!("{:?}", self.as_str()),
+        }
     }
 }
 
@@ -167,6 +190,10 @@ impl Value {
 
     pub fn get_type(&self) -> Type {
         unsafe { Type(LLVMTypeOf(self.0)) }
+    }
+
+    pub fn get_ffi_type(&self) -> FFIType {
+        self.get_type().ffi_type()
     }
 
     pub fn get_operand(&self, idx: u32) -> Value {
