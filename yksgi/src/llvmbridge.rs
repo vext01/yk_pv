@@ -128,7 +128,7 @@ impl Type {
 
     /// Converts an LLVM type into a libffi type.
     pub fn ffi_type(&self) -> FFIType {
-        match unsafe { LLVMGetTypeKind(self.0) } {
+        match self.kind() {
             LLVMTypeKind::LLVMIntegerTypeKind => {
                 // FIXME: https://github.com/ykjit/yk/issues/536
                 match unsafe { LLVMGetIntTypeWidth(self.0) } {
