@@ -368,7 +368,6 @@ impl SGInterp {
                     _ => todo!(),
                 }
             } else if ret_ty.is_void() {
-                dbg!(&arg_vals);
                 cif.call::<()>(FFICodePtr(fptr), &ffi_arg_vals);
             } else {
                 todo!("{:?}", ret_ty.as_str());
