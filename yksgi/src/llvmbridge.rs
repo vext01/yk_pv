@@ -188,6 +188,18 @@ impl Value {
         unsafe { !LLVMIsASwitchInst(self.0).is_null() }
     }
 
+    pub fn is_inline_asm(&self) -> bool {
+        !unsafe { LLVMIsAInlineAsm(self.0).is_null() }
+    }
+
+    pub fn is_function(&self) -> bool {
+        unsafe { !LLVMIsAFunction(self.0).is_null() }
+    }
+
+    pub fn is_vararg_function(&self) -> bool {
+        unsafe { LLVMIsFunctionVarArg(LLVMGetElementType(LLVMTypeOf(self.0))) != 0 }
+    }
+
     pub fn get_type(&self) -> Type {
         unsafe { Type(LLVMTypeOf(self.0)) }
     }
@@ -203,6 +215,14 @@ impl Value {
         }
     }
 
+    pub fn get_num_arg_operands(&self) -> u32 {
+        unsafe { LLVMGetNumArgOperands(self.0) }
+    }
+
+    pub fn get_called_value(&self) -> Value {
+        unsafe { Self::new(LLVMGetCalledValue(self.0)) }
+    }
+
     pub fn opcode(&self) -> LLVMOpcode {
         unsafe {
             debug_assert!(!LLVMIsAInstruction(self.0).is_null());
@@ -216,6 +236,12 @@ impl Value {
 
     pub fn kind(&self) -> LLVMValueKind {
         unsafe { LLVMGetValueKind(self.0) }
+    }
+
+    pub fn get_name(&self) -> &str {
+        let mut size = MaybeUninit::<usize>::uninit();
+        let name = unsafe { CStr::from_ptr(LLVMGetValueName2(self.0, size.as_mut_ptr())) };
+        name.to_str().unwrap()
     }
 }
 

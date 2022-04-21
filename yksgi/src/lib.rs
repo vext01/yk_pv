@@ -4,7 +4,7 @@ use llvm_sys::core::*;
 use llvm_sys::target::{LLVMABISizeOfType, LLVMOffsetOfElement};
 use llvm_sys::{LLVMOpcode, LLVMTypeKind};
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::ffi::{c_void, CStr};
 use std::ptr;
 
@@ -285,17 +285,14 @@ impl SGInterp {
     /// Implement call instructions. Returns `true` if the control point has been reached,
     /// `false` otherwise.
     unsafe fn call(&mut self) -> bool {
-        let call_inst = self.pc.get();
-        let func = LLVMGetCalledValue(call_inst);
-        if !LLVMIsAInlineAsm(func).is_null() {
+        let call_inst = self.pc;
+        let func = call_inst.get_called_value();
+        if func.is_inline_asm() {
             // FIXME: Implement calls to inline asm. Just skip them for now, as our tests won't run
             // otherwise.
             return false;
         }
-        let mut size = 0;
-        let name = CStr::from_ptr(LLVMGetValueName2(func, &mut size))
-            .to_str()
-            .unwrap();
+        let name = func.get_name();
         if ALWAYS_SKIP_FUNCS.contains(&name) {
             // There's no point calling these functions inside the stopgap interpreter so just skip
             // them.
@@ -322,13 +319,13 @@ impl SGInterp {
             // OPT: This could benefit from caching, and we may already know the address of the
             // callee if we inlined it when preparing traces:
             // https://github.com/ykjit/yk/issues/544
-            assert!(!LLVMIsAFunction(func).is_null());
+            debug_assert!(func.is_function());
             let fptr = dlsym(ptr::null_mut(), name.as_ptr() as *const i8);
             if fptr == ptr::null_mut() {
                 todo!("couldn't find symbol: {}", name);
             }
 
-            if LLVMIsFunctionVarArg(LLVMGetElementType(LLVMTypeOf(func))) != 0 {
+            if func.is_vararg_function() {
                 todo!("calling a varargs function");
             }
 
@@ -346,8 +343,8 @@ impl SGInterp {
             // any callable function-like thing, so we can still use that for the loop bounds.
             let mut builder = FFIBuilder::new();
             let mut arg_vals = Vec::new();
-            for i in 0..LLVMGetNumArgOperands(call_inst) {
-                let arg = Value::new(LLVMGetOperand(call_inst, i.try_into().unwrap()));
+            for i in 0..call_inst.get_num_arg_operands() {
+                let arg = call_inst.get_operand(i);
                 builder = builder.arg(arg.get_ffi_type());
                 // Note that a `FFIArg()` is unsafe in that caches a raw pointer to something which
                 // may later die. Converting to `FFIArg()` in this loop would cause UB later
@@ -355,12 +352,11 @@ impl SGInterp {
                 // once the loop body ends.
                 arg_vals.push(self.var_lookup(&arg).val);
             }
-            let ret_val = Value::new(call_inst);
-            builder = builder.res(ret_val.get_ffi_type());
+            builder = builder.res(call_inst.get_ffi_type());
             let cif = builder.into_cif(); // OPT: cache CIFs for repeated calls to same func sig.
 
             // Actually do the call.
-            let ret_ty = ret_val.get_type();
+            let ret_ty = call_inst.get_type();
             let ffi_arg_vals: Vec<FFIArg> = arg_vals.iter().map(|a| ffi_arg(a)).collect();
             if ret_ty.is_integer() {
                 // FIXME: https://github.com/ykjit/yk/issues/536
