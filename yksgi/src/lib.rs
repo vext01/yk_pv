@@ -330,20 +330,10 @@ impl SGInterp {
             }
 
             // Now build the calling interface and collect the values of the callee's arguments.
-            //
-            // It may be tempting to use `LLVMGetArgOperand()` to extract callee operands from our
-            // `CallInst`, but at the time of writing this wraps the C++ method
-            // `FuncletPadInst::getArgOperand()` which is not what we want.
-            //
-            // `CallBase::getArgOperand()` isn't currently exposed by the LLVM C API, so we instead
-            // use the implicit knowledge that for a `CallInst` the first `N` operands are the
-            // operands of the function being called (the remaining operand is the callee).
-            //
-            // Despite this, `LLVMGetNumArgOperands()` *is* generic and does the right thing for
-            // any callable function-like thing, so we can still use that for the loop bounds.
             let mut builder = FFIBuilder::new();
             let mut arg_vals = Vec::new();
             for i in 0..call_inst.get_num_arg_operands() {
+                // The first N operands are the first N operands of the function being called.
                 let arg = call_inst.get_operand(i);
                 builder = builder.arg(arg.get_ffi_type());
                 // Note that a `FFIArg()` is unsafe in that caches a raw pointer to something which
