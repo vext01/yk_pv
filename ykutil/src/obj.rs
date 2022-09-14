@@ -1,9 +1,25 @@
 //! Utilities for dealing with object files.
 
+use libc::{c_char, c_int, c_void, dladdr, Dl_info};
 use memmap2::Mmap;
 use object::{self, Object, ObjectSection, Section};
-use std::sync::LazyLock;
-use std::{convert::TryFrom, env, fs};
+use std::{convert::TryFrom, env, ffi::CStr, fs, mem::MaybeUninit, path::PathBuf, sync::LazyLock};
+
+extern "C" {
+    fn main(argc: c_int, arv: *const *const c_char) -> c_int;
+}
+
+/// The path to the currently running binary.
+///
+/// This relies on there being an exported symbol for `main()`.
+pub static SELF_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    let mut info = MaybeUninit::<Dl_info>::uninit();
+    if unsafe { dladdr(main as *const c_void, info.as_mut_ptr()) } == 0 {
+        panic!("couldn't find main()!");
+    }
+    let info = unsafe { info.assume_init() };
+    PathBuf::from(unsafe { CStr::from_ptr(info.dli_fname) }.to_str().unwrap())
+});
 
 /// The current executable mmaped into the address space.
 ///
