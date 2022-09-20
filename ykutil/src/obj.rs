@@ -1,21 +1,27 @@
 //! Utilities for dealing with object files.
 
-use libc::{c_char, c_int, c_void, dladdr, Dl_info};
+use libc::{c_void, dladdr, Dl_info};
 use memmap2::Mmap;
 use object::{self, Object, ObjectSection, Section};
-use std::{convert::TryFrom, env, ffi::CStr, fs, mem::MaybeUninit, path::PathBuf, sync::LazyLock};
+use std::{
+    convert::TryFrom, env, ffi::CStr, fs, mem::MaybeUninit, path::PathBuf, ptr, sync::LazyLock,
+};
 
 extern "C" {
-    fn main(argc: c_int, arv: *const *const c_char) -> c_int;
+    fn find_main() -> *const c_void;
 }
 
 /// The path to the currently running binary.
 ///
 /// This relies on there being an exported symbol for `main()`.
 pub static SELF_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    let addr = unsafe { find_main() };
+    if addr == ptr::null_mut() as *mut c_void {
+        panic!("couldn't find address of main()");
+    }
     let mut info = MaybeUninit::<Dl_info>::uninit();
-    if unsafe { dladdr(main as *const c_void, info.as_mut_ptr()) } == 0 {
-        panic!("couldn't find main()!");
+    if unsafe { dladdr(addr, info.as_mut_ptr()) } == 0 {
+        panic!("couldn't find Dl_info for main()");
     }
     let info = unsafe { info.assume_init() };
     PathBuf::from(unsafe { CStr::from_ptr(info.dli_fname) }.to_str().unwrap())
