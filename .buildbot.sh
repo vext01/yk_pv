@@ -73,7 +73,14 @@ for mode in "" "--release"; do
     cargo build ${mode} -p ykcapi;
 done
 
-for i in $(seq 10); do
+if [ "${SOFTDEV_CI}" = "1" ]; then
+    TEST_ITERS=100
+else
+    TEST_ITERS=10
+fi
+
+for i in $(seq ${TEST_ITERS}); do
+    echo "---> Test iteration ${i}"
     cargo test
     cargo test --release
 done
