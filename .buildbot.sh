@@ -2,6 +2,13 @@
 
 set -e
 
+
+if [ "${SOFTDEV_CI}" = "1" ]; then
+    echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+else
+    echo "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+fi
+
 # Install rustup.
 export CARGO_HOME="`pwd`/.cargo"
 export RUSTUP_HOME="`pwd`/.rustup"
