@@ -3,8 +3,9 @@ ARG CI_UID
 RUN useradd -m -u ${CI_UID} ci
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key  | gpg --dearmor > /etc/apt/trusted.gpg.d/llvm.gpg
 RUN echo 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-16 main' > /etc/apt/sources.list
+RUN apt-get update && apt-get -y install wget gpg
 RUN apt-get update && \
-apt-get -y install clang-16 make curl procps file git cmake python3 \
+    apt-get -y install clang-16 make curl procps file git cmake python3 \
     libtinfo-dev libzip-dev ninja-build
 WORKDIR /ci
 RUN chown ${CI_UID}:${CI_UID} .
