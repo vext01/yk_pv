@@ -14,6 +14,10 @@ sh rustup.sh --default-host x86_64-unknown-linux-gnu \
     -y
 export PATH=${CARGO_HOME}/bin/:$PATH
 
+# The docker image has a newer (then Debian's) clang from the LLVM apt repo.
+SYS_CLANG=/usr/bin/clang-16
+SYS_CLANGXX=/usr/bin/clang++-16
+
 rustup toolchain install nightly --allow-downgrade --component rustfmt
 
 cargo fmt --all -- --check
@@ -46,8 +50,8 @@ cmake -DCMAKE_INSTALL_PREFIX=`pwd`/../inst \
     -DLLVM_ENABLE_PROJECTS="lld;clang" \
     -DCLANG_DEFAULT_PIE_ON_LINUX=OFF \
     -DBUILD_SHARED_LIBS=ON \
-    -DCMAKE_C_COMPILER=/usr/bin/clang \
-    -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+    -DCMAKE_C_COMPILER=${SYS_CLANG} \
+    -DCMAKE_CXX_COMPILER=${SYS_CLANGXX} \
     -GNinja \
     ../llvm
 cmake --build .
@@ -79,7 +83,7 @@ done
 # YKB_YKLLVM_BIN_DIR. In essence, we now repeat much of what we did above but
 # with `--release`.
 unset YKB_YKLLVM_BIN_DIR
-export YKB_YKLLVM_BUILD_ARGS="define:CMAKE_C_COMPILER=/usr/bin/clang,define:CMAKE_CXX_COMPILER=/usr/bin/clang++"
+export YKB_YKLLVM_BUILD_ARGS="define:CMAKE_C_COMPILER=${SYS_CLANG},define:CMAKE_CXX_COMPILER=${SYS_CLANGXX}"
 
 cargo -Z unstable-options build --release --build-plan -p ykcapi | \
     awk '/yk_testing/ { ec=1 } /yk_jitstate_debug/ { ec=1 } END {exit ec}'
