@@ -2,6 +2,8 @@
 
 set -e
 
+/nope
+
 # Install rustup.
 export CARGO_HOME="`pwd`/.cargo"
 export RUSTUP_HOME="`pwd`/.rustup"
