@@ -16,6 +16,11 @@ fi
 # -O1, -O2, etc. clang flags like normal.
 LINKTIME_PASSES=instcombine
 
+# XXX hacked in quick
+if [ -n "${YKD_LTO_NEWPM_PASSES}" ]; then
+    LINKTIME_PASSES=${YKD_LTO_NEWPM_PASSES}
+fi
+
 OUTPUT=""
 
 usage() {
@@ -51,6 +56,10 @@ handle_arg() {
             # Without this, clang will slap `optnone` attributes on every
             # function, causing optimisations to skip them.
             OUTPUT="${OUTPUT} -Xclang -disable-O0-optnone"
+            # XXX hacked in quick.
+            if [ -n "${PRELINK_PASSES}" ]; then
+                OUTPUT="${OUTPUT} -mllvm --newpm-passes=${PRELINK_PASSES}"
+            fi
             case $mode in
                 debug) OUTPUT="$OUTPUT -g" ;;
             esac
