@@ -13,7 +13,7 @@ use std::{
 };
 use yksmp::{Location as SMLocation, SMEntry, StackMapParser};
 
-mod llvmbridge;
+pub(crate) mod llvmbridge;
 pub use llvmbridge::{BitcodeSection, LLVMGetThreadSafeModule};
 use llvmbridge::{Module, Type, Value};
 
@@ -41,7 +41,7 @@ static ISIZEOF_POINTER: isize = std::mem::size_of::<*const ()>() as isize;
 static RBP_DWARF_NUM: u16 = 6;
 
 /// Live value.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SGValue {
     pub val: u64,
     pub ty: Type,
@@ -54,6 +54,7 @@ impl SGValue {
 }
 
 /// A frame holding live variables.
+#[derive(Debug)]
 struct Frame {
     vars: HashMap<Value, SGValue>,
     pc: Value,
@@ -189,7 +190,7 @@ impl FrameReconstructor {
         let newstack = unsafe { libc::malloc(memsize) };
 
         // Get the modules layout which we'll need to extract type sizes of LLVM IR.
-        let layout = self.module.datalayout();
+        let layout = self.module.target_data().get();
 
         // Generate and write frames to the new stack. Since the stack grows downwards and we need
         // to keep track of spilled register values we write to `newstack` from back to front. To
@@ -259,7 +260,7 @@ impl FrameReconstructor {
             let smcall = get_stackmap_call(frame.pc);
             for (j, lv) in rec.live_vars.iter().enumerate() {
                 // Adjust the operand index by 2 to skip stackmap ID and shadow bytes.
-                let op = smcall.get_operand(u32::try_from(j + 2).unwrap());
+                let op = smcall.get_operand(j + 2);
                 let val = frame.get(&op).unwrap().val;
                 let l = if lv.len() == 1 {
                     lv.get(0).unwrap()
@@ -296,29 +297,10 @@ impl FrameReconstructor {
                             registers[usize::try_from(*off - 1).unwrap()] = val;
                         }
                     }
-                    SMLocation::Direct(reg, off, _) => {
-                        if i == 0 {
-                            // Direct locations are pointers into the stack (e.g. alloca or GEP).
-                            // Normally, AOT and JIT have different stacks so copying them over
-                            // would be incorrect. However, since we are using a shadow stack which
-                            // is shared between AOT and JIT these values should be identical and
-                            // thus don't need copying. Interestingly, if we do copy them, this
-                            // leads to segfaults. FIXME: Investigate more.
-                            continue;
-                        }
-                        debug_assert!(op.is_alloca());
-
-                        // The sizes reported by the stackmap aren't always correct. But we can get
-                        // the correct size from the IR.
-                        let eltype = unsafe { LLVMGetAllocatedType(op.get()) };
-                        let size = unsafe { LLVMABISizeOfType(layout, eltype) };
-                        // Direct locations are always be in regards to RBP.
-                        debug_assert_eq!(*reg, RBP_DWARF_NUM);
-                        let temp = unsafe { rbp.offset(isize::try_from(*off).unwrap()) };
-                        debug_assert!(*off < i32::try_from(rec.size).unwrap());
-                        unsafe {
-                            libc::memcpy(temp, val as *const c_void, usize::try_from(size).unwrap())
-                        };
+                    SMLocation::Direct(..) => {
+                        // XXX: fixed in master.
+                        debug_assert_eq!(i, 0);
+                        continue;
                     }
                     SMLocation::Indirect(reg, off, size) => {
                         debug_assert_eq!(*reg, RBP_DWARF_NUM);

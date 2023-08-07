@@ -56,6 +56,7 @@ impl UnmappedTrace for PTTrace {
             return Err(InvalidTraceError::EmptyTrace);
         }
 
-        Ok(IRTrace::new(mapped, mt.faddrs()))
+        let faddrs = mt.faddrs();
+        Ok(IRTrace::new(mapped, faddrs))
     }
 }

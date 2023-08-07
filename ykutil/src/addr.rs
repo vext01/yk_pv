@@ -139,6 +139,23 @@ pub fn vaddr_to_sym_and_obj(vaddr: usize) -> Option<DLInfo> {
     }
 }
 
+/// A wrapper around `dlsym()` for mapping symbol names to virtual addresses.
+///
+/// FIXME: Look for raw uses of `dlsym()` throughout our code base and replace them with a call to
+/// this wrapper.
+///
+/// FIXME: consider `#[cached]`.
+use libc::{dlsym, RTLD_DEFAULT};
+use std::ptr;
+pub fn symbol_vaddr(sym: &CStr) -> Option<usize> {
+    let va = unsafe { dlsym(RTLD_DEFAULT, sym.as_ptr()) };
+    if va != ptr::null_mut() {
+        Some(va as usize)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{off_to_vaddr, vaddr_to_obj_and_off, vaddr_to_sym_and_obj, MaybeUninit};

@@ -1,6 +1,5 @@
 //! The main end-user interface to the meta-tracing system.
 
-#[cfg(feature = "yk_testing")]
 use std::env;
 use std::{
     cell::RefCell,
@@ -14,6 +13,7 @@ use std::{
         atomic::{AtomicU16, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
+    time::Instant,
     thread,
 };
 
@@ -183,9 +183,12 @@ impl MT {
                         _,
                         unsafe extern "C" fn(*mut c_void, *const CompiledTrace, *const c_void) -> !,
                     >(ctr.entry());
+                    let arc = Arc::into_raw(ctr);
                     // FIXME: Calling this function overwrites the current (Rust) function frame,
                     // rather than unwinding it. https://github.com/ykjit/yk/issues/778
-                    f(ctrlp_vars, Arc::into_raw(ctr), frameaddr);
+                    //let t1 = Instant::now();
+                    f(ctrlp_vars, arc, frameaddr);
+                    //dbg!(t1.elapsed());
                 }
             }
             TransitionLocation::StartTracing => {
@@ -386,7 +389,16 @@ impl MT {
                     Err(e) => todo!("{e:?}"),
                 };
                 mt.stats.timing_state(TimingState::Compiling);
-                match irtrace.compile() {
+                // FIXME: hacky lever for now.
+                let use_fasttcg = match env::var("YKD_USE_FASTTCG") {
+                    Ok(val) if val == "1" => true,
+                    _ => false,
+                };
+
+                //let t1 = Instant::now();
+                let xxx = irtrace.compile(use_fasttcg);
+                //dbg!(t1.elapsed());
+                match xxx {
                     Ok((codeptr, di_tmpfile)) => {
                         hl_arc.lock().kind = HotLocationKind::Compiled(Arc::new(
                             CompiledTrace::new(Arc::clone(&mt), codeptr, di_tmpfile),

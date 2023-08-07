@@ -1,6 +1,7 @@
 // Run-time:
 //   env-var: YKD_SERIALISE_COMPILATION=1
 //   env-var: YKD_PRINT_JITSTATE=1
+//   env-var: YKD_STATS=-
 //   stderr:
 //     ...
 //     jit-state: enter-jit-code
@@ -25,6 +26,11 @@
 #include <yk_testing.h>
 
 #define CELLS_LEN 30000
+/* #define INPUT_PROG  \ */
+/*   "++++++++++ ++++++++++ ++++++++++ ++++++++++" \ */
+/*   ">++++++++++ ++++++++++ ++++++++++ ++++++++++ ++<" \ */
+/*   "[>.<-]" \ */
+/*   "<++++++++++." */
 #define INPUT_PROG                                                             \
   "++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<++++++" \
   "+++++++++.>.+++.------.--------.>+.>."
@@ -122,6 +128,8 @@ int main(void) {
     *ykloc = yk_location_new();
 
   interp(INPUT_PROG, &INPUT_PROG[prog_len], cells, cells_end, mt, yklocs);
+
+  yk_mt_drop(mt);
 
   free(cells);
   free(yklocs);

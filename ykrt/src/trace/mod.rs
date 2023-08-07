@@ -6,6 +6,8 @@
 
 mod errors;
 use libc::c_void;
+use llvm_sys::prelude::{LLVMModuleRef, LLVMValueRef};
+//use llvm_sys::{error::{LLVMCreateStringError, LLVMErrorRef}, orc2::LLVMOrcThreadSafeModuleWithModuleDo};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::{
@@ -21,7 +23,11 @@ use tempfile::NamedTempFile;
 use yksmp::{LiveVar, StackMapParser};
 use ykutil::obj::llvmbc_section;
 
-use crate::mt::MT;
+use crate::{
+    fasttcg::FastTCG,
+    frame::llvmbridge::{Module, Value},
+    mt::MT,
+};
 pub use errors::InvalidTraceError;
 
 /// A globally unique block ID for an LLVM IR block.
@@ -161,7 +167,17 @@ impl IRTrace {
         (di_tmp, di_fd, di_tmpname_c)
     }
 
-    pub fn compile(&self) -> Result<(*const c_void, Option<NamedTempFile>), Box<dyn Error>> {
+    // pub fn compile_fast(&self) -> Result<(*const c_void, Option<NamedTempFile>), Box<dyn Error>> {
+    //     use crate::frame::llvmbridge::ThreadSafeModule;
+    //     let aot_tsm = ThreadSafeModule::aot_module();
+    //     unsafe { LLVMOrcThreadSafeModuleWithModuleDo(aot_tsm.as_raw(), do_compile_fast, self as *const Self as *mut c_void) };
+    //     todo!()
+    // }
+
+    pub fn compile(
+        &self,
+        use_fasttcg: bool,
+    ) -> Result<(*const c_void, Option<NamedTempFile>), Box<dyn Error>> {
         let (func_names, bbs, trace_len) = self.encode_trace();
 
         let mut faddr_keys = Vec::new();
@@ -174,19 +190,70 @@ impl IRTrace {
         let (llvmbc_data, llvmbc_len) = llvmbc_section();
         let (di_tmp, di_fd, di_tmpname_c) = Self::create_debuginfo_temp_file();
 
-        let ret = unsafe {
-            yktracec::__yktracec_irtrace_compile(
-                func_names.as_ptr(),
-                bbs.as_ptr(),
-                trace_len,
-                faddr_keys.as_ptr(),
-                faddr_vals.as_ptr(),
-                faddr_keys.len(),
-                llvmbc_data,
-                llvmbc_len,
-                di_fd,
-                di_tmpname_c,
-            )
+        let ret = if use_fasttcg {
+            // Generate the JIT module and compile it with FastTCG.
+            let genres = unsafe {
+                yktracec::__yktracec_irtrace_generate_jitmod(
+                    func_names.as_ptr(),
+                    bbs.as_ptr(),
+                    trace_len,
+                    faddr_keys.as_ptr(),
+                    faddr_vals.as_ptr(),
+                    faddr_keys.len(),
+                    llvmbc_data,
+                    llvmbc_len,
+                    di_fd,
+                    di_tmpname_c,
+                )
+            };
+            // Get all the required data into Rust data structures.
+            let jitmod = unsafe { Module::new(genres.jitmod as LLVMModuleRef) };
+            let global_keys = unsafe {
+                slice::from_raw_parts(genres.global_mappings_keys, genres.global_mappings_len)
+            };
+            let global_vals = unsafe {
+                slice::from_raw_parts(genres.global_mappings_vals, genres.global_mappings_len)
+            };
+            let mut global_mappings = HashMap::new();
+            for i in 0..genres.global_mappings_len {
+                let key = global_keys[i] as LLVMValueRef;
+                global_mappings.insert(key, global_vals[i]);
+            }
+
+            // Generate code!
+            let tcg = FastTCG::new(jitmod, global_mappings);
+            let (code, stackmaps) = tcg.codegen();
+
+            let smbox = Box::new(stackmaps);
+
+            // FIXME: Emulate Lukas' gross hack from compileModule().
+            use std::mem;
+            let yuck = unsafe { libc::calloc(5, mem::size_of::<usize>()) } as *mut usize;
+            assert_ne!(yuck, ptr::null_mut());
+            unsafe {
+                *yuck = code as usize;
+                *yuck.add(1) = Box::into_raw(smbox) as usize; // stackmap data (abused).
+                *yuck.add(2) = 0; // Stackmap data size (unused for fasttcg).
+                *yuck.add(3) = genres.aot_vars as usize; // LiveAOTVals.
+                *yuck.add(4) = genres.guard_count; // GuardCount
+            }
+            yuck as *const c_void
+        } else {
+            // Generate the JIT module and compile it with LLVM.
+            unsafe {
+                yktracec::__yktracec_irtrace_compile(
+                    func_names.as_ptr(),
+                    bbs.as_ptr(),
+                    trace_len,
+                    faddr_keys.as_ptr(),
+                    faddr_vals.as_ptr(),
+                    faddr_keys.len(),
+                    llvmbc_data,
+                    llvmbc_len,
+                    di_fd,
+                    di_tmpname_c,
+                )
+            }
         };
         if ret.is_null() {
             Err("Could not compile trace.".into())
@@ -270,11 +337,24 @@ impl CompiledTrace {
         let aotvals = slice[3] as *mut c_void;
         let guardcount = slice[4] as usize;
 
-        // Parse the stackmap of this trace and cache it. The original data allocated by memman.cc
-        // is now no longer needed and can be freed.
-        let smslice = unsafe { slice::from_raw_parts(smptr as *mut u8, smsize) };
-        let smap = StackMapParser::parse(smslice).unwrap();
-        unsafe { libc::munmap(smptr as *mut c_void, smsize) };
+        let fast_tcg = if let Ok(v) = env::var("YKD_USE_FASTTCG") {
+            v == "1"
+        } else {
+            false
+        };
+
+        // FIXME: shouldn't be needed once fasttcg can write a stackmap.
+        let smap = if !fast_tcg {
+            // Parse the stackmap of this trace and cache it. The original data allocated by memman.cc
+            // is now no longer needed and can be freed.
+            let smslice = unsafe { slice::from_raw_parts(smptr as *mut u8, smsize) };
+            let smap = StackMapParser::parse(smslice).unwrap();
+            unsafe { libc::munmap(smptr as *mut c_void, smsize) };
+            smap
+        } else {
+            let smap = unsafe { Box::from_raw(smptr as *mut _)};
+            Box::into_inner(smap)
+        };
 
         // We heap allocated this array in yktracec to pass the data here. Now that we've
         // extracted it we no longer need to keep the array around.

@@ -2,7 +2,7 @@ use lang_tester::LangTester;
 use regex::Regex;
 use std::{
     env,
-    fs::read_to_string,
+    fs::{self, read_to_string},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -40,6 +40,7 @@ fn run_suite(opt: &'static str) {
     };
 
     let tempdir = TempDir::new().unwrap();
+    let tempdir_p = tempdir.path().to_owned();
 
     // Generate a `compile_commands.json` database for clangd.
     let ccg = CompletionWrapper::new(ykllvm_bin("clang"), "c_tests");
@@ -65,7 +66,7 @@ fn run_suite(opt: &'static str) {
         })
         .test_cmds(move |p| {
             let mut exe = PathBuf::new();
-            exe.push(&tempdir);
+            exe.push(&tempdir_p);
             exe.push(p.file_stem().unwrap());
 
             // Decide if we have extra objects to link to the test.
@@ -74,7 +75,7 @@ fn run_suite(opt: &'static str) {
                 .get(key)
                 .unwrap_or(&Vec::new())
                 .iter()
-                .map(|l| l.generate_obj(tempdir.path()))
+                .map(|l| l.generate_obj(&tempdir_p))
                 .collect::<Vec<PathBuf>>();
 
             let mut compiler = mk_compiler(wrapper_path.as_path(), &exe, p, opt, &extra_objs, true);
@@ -91,6 +92,21 @@ fn run_suite(opt: &'static str) {
         })
         .run();
     ccg.generate();
+
+    dbg!(tempdir.path());
+    if let Ok(save_dir) = env::var("YKT_SAVE_BINS") {
+        let mut save_dir = PathBuf::from(save_dir);
+        save_dir.push(&format!("C{}", opt));
+        if !save_dir.exists() {
+            fs::create_dir_all(&save_dir).unwrap();
+        }
+        for bin in fs::read_dir(tempdir.path()).unwrap() {
+            let bin = bin.unwrap();
+            let mut dest = save_dir.to_owned();
+            dest.push(bin.file_name());
+            fs::copy(bin.path(), dest).unwrap();
+        }
+    }
 }
 
 fn main() {

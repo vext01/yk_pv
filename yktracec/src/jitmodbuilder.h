@@ -10,16 +10,21 @@
 
 using namespace llvm;
 
-std::tuple<Module *, std::string, std::map<GlobalValue *, void *>, void *,
-           size_t>
-createModule(Module *AOTMod, char *FuncNames[], size_t BBs[], size_t TraceLen,
-             char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen);
+struct GenJITModResult {
+  Module *JITMod;
+  std::string TraceName;
+  std::map<GlobalValue *, void *> GlobalMappings;
+  void *LiveAOTVars;
+  size_t NumGuards;
+};
+
+struct GenJITModResult createModule(Module *AOTMod, char *FuncNames[],
+                                    size_t BBs[], size_t TraceLen,
+                                    char *FAddrKeys[], void *FAddrVals[],
+                                    size_t FAddrLen);
 #ifdef YK_TESTING
-std::tuple<Module *, std::string, std::map<GlobalValue *, void *>, void *,
-           size_t>
-createModuleForTraceCompilerTests(Module *AOTMod, char *FuncNames[],
-                                  size_t BBs[], size_t TraceLen,
-                                  char *FAddrKeys[], void *FAddrVals[],
-                                  size_t FAddrLen);
+struct GenJITModResult createModuleForTraceCompilerTests(
+    Module *AOTMod, char *FuncNames[], size_t BBs[], size_t TraceLen,
+    char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen);
 #endif // YK_TESTING
 #endif

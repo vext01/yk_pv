@@ -136,6 +136,10 @@ extern "C" fn __llvm_deoptimize(
             // offset 8 bytes per push.
             "mov r9, [rsp+64]",
             "push rsp",                       // Current stack pointer.
+                                              //
+            // Gross hack to align the stack before the call. XXX
+            //"sub rsp, 16",
+
             "call __ykrt_deopt",              // Returns NewFramesInfo
             "mov rdi, rax",                   // Pass NewFramesInfo.src as 1st argument.
             "mov rsi, rdx",                   // Pass NewFramesInfo.dst as 2nd argument.
@@ -204,14 +208,9 @@ extern "C" fn ts_reconstruct(ctx: *mut c_void, module: LLVMModuleRef) -> LLVMErr
                 let _val = unsafe { registers.get(*reg) };
                 todo!();
             }
-            SMLocation::Direct(reg, off, _size) => {
-                // When using `llvm.experimental.deoptimize` then direct locations should always be
-                // in relation to RBP.
-                assert_eq!(*reg, 6);
-                let addr = unsafe { registers.get(*reg) as *mut u8 };
-                let addr = unsafe { addr.offset(isize::try_from(*off).unwrap()) };
-                let aot = &aotvals[i];
-                framerec.var_init(aot.val, aot.sfidx, addr as u64);
+            SMLocation::Direct(..) => {
+                // Fixed in master. XXX
+                todo!();
             }
             SMLocation::Indirect(reg, off, size) => {
                 let addr = unsafe { registers.get(*reg) as *mut u8 };
@@ -291,11 +290,10 @@ unsafe extern "C" fn __ykrt_deopt(
         rsp,
         nfi: None,
     };
-
     let infoptr = Box::into_raw(Box::new(&mut info));
 
     let (data, len) = ykutil::obj::llvmbc_section();
-    let moduleref = LLVMGetThreadSafeModule(BitcodeSection { data, len });
+    let moduleref = LLVMGetThreadSafeModule(&BitcodeSection { data, len });
 
     // The LLVM CAPI doesn't allow us to manually lock/unlock a ThreadSafeModule, and uses a
     // call-back function instead which it runs after locking the module. This means we need to

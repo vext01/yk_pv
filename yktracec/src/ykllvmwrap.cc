@@ -15,6 +15,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/SourceMgr.h"
@@ -201,8 +202,8 @@ void initLLVM(void *Unused) {
 // Load the GlobalAOTMod.
 //
 // This must only be called from getAOTMod() for correct synchronisation.
-void loadAOTMod(struct BitcodeSection &Bitcode) {
-  auto Sf = StringRef((const char *)Bitcode.data, Bitcode.len);
+void loadAOTMod(struct BitcodeSection *Bitcode) {
+  auto Sf = StringRef((const char *)Bitcode->data, Bitcode->len);
   auto Mb = MemoryBufferRef(Sf, "");
   SMDiagnostic Error;
   ThreadSafeContext AOTCtx = std::make_unique<LLVMContext>();
@@ -216,15 +217,18 @@ void loadAOTMod(struct BitcodeSection &Bitcode) {
 
 // Get a thread-safe handle on the LLVM module stored in the .llvmbc section of
 // the binary. The module is loaded if we haven't yet done so.
-ThreadSafeModule *getThreadAOTMod(struct BitcodeSection &Bitcode) {
+ThreadSafeModule *getThreadAOTMod(struct BitcodeSection *Bitcode) {
   std::call_once(GlobalAOTModLoaded, loadAOTMod, Bitcode);
   return &GlobalAOTMod;
 }
 
 // Exposes `getThreadAOTMod` so we can get a thread-safe copy of the
 // AOT IR from within Rust.
+//
+// FIXME: This should be named differently so that it can't be confused with an
+// LLVM API function.
 extern "C" LLVMOrcThreadSafeModuleRef
-LLVMGetThreadSafeModule(struct BitcodeSection &Bitcode) {
+LLVMGetThreadSafeModule(struct BitcodeSection *Bitcode) {
   ThreadSafeModule *ThreadAOTMod = getThreadAOTMod(Bitcode);
   // Since the LLVM CAPI doesn't expose the ThreadSafeModule wrapper, we have
   // to do the casting ourselves.
@@ -385,20 +389,15 @@ void rewriteDebugInfo(Module *M, string TraceName, int FD,
 //
 // Returns a pointer to the compiled function.
 template <typename FN>
-void *compileIRTrace(FN Func, char *FuncNames[], size_t BBs[], size_t TraceLen,
-                     char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen,
-                     void *BitcodeData, size_t BitcodeLen, int DebugInfoFD,
-                     char *DebugInfoPath) {
-  DebugIRPrinter DIP;
-
+struct GenJITModResult
+generateJITMod(DebugIRPrinter &DIP, FN Func, char *FuncNames[], size_t BBs[],
+               size_t TraceLen, char *FAddrKeys[], void *FAddrVals[],
+               size_t FAddrLen, void *BitcodeData, size_t BitcodeLen,
+               int DebugInfoFD, char *DebugInfoPath) {
   struct BitcodeSection Bitcode = {BitcodeData, BitcodeLen};
-  ThreadSafeModule *ThreadAOTMod = getThreadAOTMod(Bitcode);
+  ThreadSafeModule *ThreadAOTMod = getThreadAOTMod(&Bitcode);
 
-  Module *JITMod;
-  std::string TraceName;
-  std::map<GlobalValue *, void *> GlobalMappings;
-  void *AOTMappingVec;
-  size_t GuardCount;
+  GenJITModResult Res;
 
   // Get access to the shared AOT module and use it to assemble the trace. This
   // will automatically wait to acquire a lock and release it when done. Once
@@ -406,40 +405,54 @@ void *compileIRTrace(FN Func, char *FuncNames[], size_t BBs[], size_t TraceLen,
   // it isn't needed for compilation.
   ThreadAOTMod->withModuleDo([&](Module &AOTMod) {
     DIP.print(DebugIR::AOT, &AOTMod);
-    std::tie(JITMod, TraceName, GlobalMappings, AOTMappingVec, GuardCount) =
+    Res =
         Func(&AOTMod, FuncNames, BBs, TraceLen, FAddrKeys, FAddrVals, FAddrLen);
   });
 
-  // If we failed to build the trace, return null.
-  if (JITMod == nullptr) {
-    return nullptr;
+  // If we failed to build the trace, bail out now.
+  if (Res.JITMod != nullptr) {
+    DIP.print(DebugIR::JITPreOpt, Res.JITMod);
+#ifndef NDEBUG
+    llvm::verifyModule(*Res.JITMod, &llvm::errs());
+#endif
   }
 
-  DIP.print(DebugIR::JITPreOpt, JITMod);
-#ifndef NDEBUG
-  llvm::verifyModule(*JITMod, &llvm::errs());
-#endif
+  return Res;
+}
+
+template <typename FN>
+void *compileIRTrace(FN Func, char *FuncNames[], size_t BBs[], size_t TraceLen,
+                     char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen,
+                     void *BitcodeData, size_t BitcodeLen, int DebugInfoFD,
+                     char *DebugInfoPath) {
+  DebugIRPrinter DIP;
+  struct GenJITModResult Res = generateJITMod(
+      DIP, Func, FuncNames, BBs, TraceLen, FAddrKeys, FAddrVals, FAddrLen,
+      BitcodeData, BitcodeLen, DebugInfoFD, DebugInfoPath);
+  if (Res.JITMod == nullptr) {
+    return nullptr;
+  }
 
   // The MCJIT code-gen does no optimisations itself, so we must do it
   // ourselves.
   PassManagerBuilder Builder;
   Builder.OptLevel = 2; // FIXME Make this user-tweakable.
-  legacy::FunctionPassManager FPM(JITMod);
+  legacy::FunctionPassManager FPM(Res.JITMod);
   legacy::PassManager MPM;
   Builder.populateFunctionPassManager(FPM);
   Builder.populateModulePassManager(MPM);
-  MPM.run(*JITMod);
+  MPM.run(*Res.JITMod);
 
-  DIP.print(DebugIR::JITPostOpt, JITMod);
+  DIP.print(DebugIR::JITPostOpt, Res.JITMod);
 
   // If `DebugInfoFD` is -1, then trace debuginfo was not requested.
   if (DebugInfoFD != -1)
-    rewriteDebugInfo(JITMod, TraceName, DebugInfoFD,
+    rewriteDebugInfo(Res.JITMod, Res.TraceName, DebugInfoFD,
                      filesystem::path(DebugInfoPath));
 
   // Compile IR trace and return a pointer to its function.
-  return compileModule(TraceName, JITMod, GlobalMappings, AOTMappingVec,
-                       GuardCount);
+  return compileModule(Res.TraceName, Res.JITMod, Res.GlobalMappings,
+                       Res.LiveAOTVars, Res.NumGuards);
 }
 
 extern "C" void *__yktracec_irtrace_compile(
@@ -461,3 +474,83 @@ extern "C" void *__yktracec_irtrace_compile_for_tc_tests(
                         BitcodeLen, DebugInfoFD, DebugInfoPath);
 }
 #endif
+
+struct RustGenJITModResult {
+  Module *JITMod;
+  size_t GlobalMappingsLen;
+  GlobalValue **GlobalMappingsKeys;
+  void **GlobalMappingsVals;
+  void *LiveAOTVals;
+  size_t NumGuards;
+};
+
+extern "C" RustGenJITModResult __yktracec_irtrace_generate_jitmod(
+    char *FuncNames[], size_t BBs[], size_t TraceLen, char *FAddrKeys[],
+    void *FAddrVals[], size_t FAddrLen, void *BitcodeData, uint64_t BitcodeLen,
+    int DebugInfoFD, char *DebugInfoPath) {
+  DebugIRPrinter DIP;
+  struct GenJITModResult Res = generateJITMod(
+      DIP, createModule, FuncNames, BBs, TraceLen, FAddrKeys, FAddrVals,
+      FAddrLen, BitcodeData, BitcodeLen, DebugInfoFD, DebugInfoPath);
+
+  size_t GMLen = Res.GlobalMappings.size();
+  GlobalValue **GMKeys =
+      reinterpret_cast<GlobalValue **>(calloc(GMLen, sizeof(Value *)));
+  void **GMVals = reinterpret_cast<void **>(calloc(GMLen, sizeof(void *)));
+  // XXX
+  assert(GMKeys != nullptr);
+  assert(GMVals != nullptr);
+
+  size_t I = 0;
+  for (auto Entry = Res.GlobalMappings.begin();
+       Entry != Res.GlobalMappings.end(); Entry++) {
+    GMKeys[I] = std::get<0>(*Entry);
+    GMVals[I] = std::get<1>(*Entry);
+    I++;
+  }
+
+  return {Res.JITMod, GMLen, GMKeys, GMVals, Res.LiveAOTVars, Res.NumGuards };
+}
+
+// `GetElementPointerInst::collectOffset` wrapped for C. Absent from the
+// official C API.
+extern "C" size_t __yktracec_collect_gep_offset(Module *M,
+                                                GetElementPtrInst *GEP) {
+  size_t Bits = sizeof(size_t) * 8;
+  APInt Off = APInt::getZero(Bits);
+  DataLayout DL(M);
+  MapVector<Value *, APInt> Unused;
+  GEP->collectOffset(DL, Bits, Unused, Off);
+  return Off.getZExtValue();
+}
+
+extern "C" const char *__yktracec_get_raw_data_values(Value *ConstSeq, size_t *OutSize) {
+  StringRef SR = cast<ConstantDataSequential>(ConstSeq)->getRawDataValues();
+  *OutSize = SR.size();
+  return SR.data();
+}
+
+extern "C" size_t __yktracec_num_deopt_vars(CallBase *CB) {
+  size_t Num = 0; 
+  for (unsigned I = 0; I < CB->getNumOperandBundles(); I++) {
+    OperandBundleUse BU = CB->getOperandBundleAt(I);
+    if (BU.getTagName() != "deopt") {
+      continue;
+    }
+    Num += BU.Inputs.size();
+  }
+  return Num;
+}
+
+extern "C" void __yktracec_get_deopt_vars(CallBase *CB, Value **Fill) {
+  for (unsigned I = 0; I < CB->getNumOperandBundles(); I++) {
+    OperandBundleUse BU = CB->getOperandBundleAt(I);
+    if (BU.getTagName() != "deopt") {
+      continue;
+    }
+    for (unsigned J = 0; J < BU.Inputs.size(); J++) {
+      *Fill = BU.Inputs[J];
+      Fill++;
+    }
+  }
+}

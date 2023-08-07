@@ -1,13 +1,16 @@
 //! Interpreter-facing API to the Yk meta-tracer.
 
+#![feature(entry_insert)]
 #![cfg_attr(test, feature(test))]
 #![feature(lazy_cell)]
 #![feature(local_key_cell_methods)]
 #![feature(naked_functions)]
+#![feature(box_into_inner)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::new_without_default)]
 
 mod deopt;
+pub(crate) mod fasttcg;
 mod frame;
 mod location;
 pub(crate) mod mt;

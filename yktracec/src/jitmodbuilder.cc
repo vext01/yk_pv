@@ -1743,23 +1743,23 @@ public:
   }
 };
 
-tuple<Module *, string, std::map<GlobalValue *, void *>, void *, size_t>
-createModule(Module *AOTMod, char *FuncNames[], size_t BBs[], size_t TraceLen,
-             char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen) {
+struct GenJITModResult createModule(Module *AOTMod, char *FuncNames[],
+                                    size_t BBs[], size_t TraceLen,
+                                    char *FAddrKeys[], void *FAddrVals[],
+                                    size_t FAddrLen) {
   JITModBuilder JB = JITModBuilder::Create(AOTMod, FuncNames, BBs, TraceLen,
                                            FAddrKeys, FAddrVals, FAddrLen);
   auto JITMod = JB.createModule();
-  return make_tuple(JITMod, std::move(JB.TraceName),
-                    std::move(JB.GlobalMappings), JB.LiveAOTArray,
-                    JB.GuardCount);
+  struct GenJITModResult Res = {JITMod, std::move(JB.TraceName),
+                                std::move(JB.GlobalMappings), JB.LiveAOTArray,
+                                JB.GuardCount};
+  return Res;
 }
 
 #ifdef YK_TESTING
-tuple<Module *, string, std::map<GlobalValue *, void *>, void *, size_t>
-createModuleForTraceCompilerTests(Module *AOTMod, char *FuncNames[],
-                                  size_t BBs[], size_t TraceLen,
-                                  char *FAddrKeys[], void *FAddrVals[],
-                                  size_t FAddrLen) {
+struct GenJITModResult createModuleForTraceCompilerTests(
+    Module *AOTMod, char *FuncNames[], size_t BBs[], size_t TraceLen,
+    char *FAddrKeys[], void *FAddrVals[], size_t FAddrLen) {
   JITModBuilder JB = JITModBuilder::CreateMocked(
       AOTMod, FuncNames, BBs, TraceLen, FAddrKeys, FAddrVals, FAddrLen);
 
@@ -1795,7 +1795,8 @@ createModuleForTraceCompilerTests(Module *AOTMod, char *FuncNames[],
   IRBuilder<> DOBuilder(DOBB);
   DOBuilder.CreateUnreachable();
 
-  return make_tuple(JITMod, std::move(JB.TraceName),
-                    std::move(JB.GlobalMappings), nullptr, 0);
+  struct GenJITModResult Res = {JITMod, std::move(JB.TraceName),
+                                std::move(JB.GlobalMappings), nullptr, 0};
+  return Res;
 }
 #endif

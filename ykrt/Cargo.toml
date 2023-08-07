@@ -17,6 +17,10 @@ yksmp = { path = "../yksmp" }
 strum = { version = "0.24.0", features = ["derive"] }
 yktracec = { path = "../yktracec" }
 ykutil = { path = "../ykutil" }
+dynasmrt = "2.0.0"
+iced-x86 = { version = "1.20.0", features = [ "decoder" ] }
+byteorder = "1.4.3"
+timeit = "0.1.2"
 
 [dependencies.llvm-sys]
 # note: using a git version to get llvm linkage features in llvm-sys (not in a
