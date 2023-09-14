@@ -12,6 +12,7 @@ pub mod compile;
 mod deopt;
 mod frame;
 mod location;
+mod ir;
 pub(crate) mod mt;
 pub mod trace;
 mod ykstats;
