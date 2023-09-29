@@ -97,13 +97,26 @@ impl IRDisplay for ConstantOperand {
 #[deku_derive(DekuRead)]
 #[derive(Debug)]
 pub(crate) struct LocalVariableOperand {
+    #[deku(skip)] // computed after deserialisation.
+    func_idx: usize,
     bb_idx: usize,
     inst_idx: usize,
 }
 
 impl IRDisplay for LocalVariableOperand {
-    fn to_str(&self, _m: &AOTModule) -> String {
-        format!("${}_{}", self.bb_idx, self.inst_idx)
+    fn to_str(&self, m: &AOTModule) -> String {
+        format!(
+            "${}_{}: {}",
+            self.bb_idx,
+            self.inst_idx,
+            self.get_type(m).to_str(m)
+        )
+    }
+}
+
+impl LocalVariableOperand {
+    fn get_type<'a>(&self, m: &'a AOTModule) -> &'a Type {
+        m.funcs[self.func_idx].blocks[self.bb_idx].instrs[self.inst_idx].get_type(m)
     }
 }
 
@@ -148,6 +161,12 @@ pub(crate) struct Instruction {
     name: RefCell<Option<String>>,
 }
 
+impl Instruction {
+    fn get_type<'a>(&self, m: &'a AOTModule) -> &'a Type {
+        &m.types[self.type_index]
+    }
+}
+
 impl IRDisplay for Instruction {
     fn to_str(&self, m: &AOTModule) -> String {
         if self.name.borrow().is_none() {
@@ -158,7 +177,11 @@ impl IRDisplay for Instruction {
         if self.opcode.generates_value() {
             let name = self.name.borrow();
             // The unwrap cannot fail, as we forced computation of variable names above.
-            ret.push_str(&format!("${} = ", name.as_ref().unwrap()));
+            ret.push_str(&format!(
+                "${}: {} = ",
+                name.as_ref().unwrap(),
+                self.get_type(m).to_str(m)
+            ));
         }
         ret.push_str(&self.opcode.to_str(m));
         if !self.operands.is_empty() {
@@ -235,7 +258,6 @@ impl IRDisplay for Function {
 #[deku_derive(DekuRead)]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct IntegerType {
-    #[deku(temp)] // FIXME: untemp when needed.
     num_bits: u32,
 }
 
@@ -244,6 +266,12 @@ impl IntegerType {
         // FIXME: Implement printing of aribitrarily-sized (in bits) integers.
         // Consider using a bigint library so we don't have to do it ourself?
         String::from("SOMECONST")
+    }
+}
+
+impl IRDisplay for IntegerType {
+    fn to_str(&self, _m: &AOTModule) -> String {
+        format!("i{}", self.num_bits)
     }
 }
 
@@ -266,6 +294,15 @@ impl Type {
         match self {
             Self::Integer(it) => it.const_to_str(c),
             Self::Unimplemented(s) => format!("?{}", s),
+        }
+    }
+}
+
+impl IRDisplay for Type {
+    fn to_str(&self, m: &AOTModule) -> String {
+        match self {
+            Self::Integer(i) => i.to_str(m),
+            Self::Unimplemented(s) => s.to_owned(),
         }
     }
 }
@@ -327,6 +364,24 @@ impl AOTModule {
         }
     }
 
+    /// Fill in the function index of local variable operands of instructions.o
+    ///
+    /// FIXME: It may be possible to do this as we deserialise, instead of after the fact:
+    /// https://github.com/sharksforarms/deku/issues/363
+    fn compute_local_operand_func_indices(&mut self) {
+        for (f_idx, f) in self.funcs.iter_mut().enumerate() {
+            for bb in &mut f.blocks {
+                for inst in &mut bb.instrs {
+                    for op in &mut inst.operands {
+                        if let Operand::LocalVariable(ref mut lv) = op {
+                            lv.func_idx = f_idx;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn to_str(&self) -> String {
         let mut ret = String::new();
         ret.push_str(&format!("# IR format version: {}\n", self.version));
@@ -349,7 +404,10 @@ impl AOTModule {
 /// Deserialise an AOT module from the slice `data`.
 pub(crate) fn deserialise_module(data: &[u8]) -> Result<AOTModule, Box<dyn Error>> {
     match AOTModule::from_bytes((data, 0)) {
-        Ok(((_, _), modu)) => Ok(modu),
+        Ok(((_, _), mut modu)) => {
+            modu.compute_local_operand_func_indices();
+            Ok(modu)
+        }
         Err(e) => Err(e.to_string().into()),
     }
 }
@@ -446,7 +504,7 @@ mod tests {
 
 func foo {
   bb0:
-    $0_0 = alloca ?a_type
+    $0_0: a_type = alloca ?a_type
     nop
   bb1:
     nop
