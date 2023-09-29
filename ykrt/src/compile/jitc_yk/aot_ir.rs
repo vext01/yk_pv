@@ -141,7 +141,7 @@ impl IRDisplay for Operand {
         match self {
             Self::Constant(c) => c.to_str(m),
             Self::LocalVariable(l) => l.to_str(m),
-            Self::String(s) => format!("\"{}\"", s),
+            Self::String(s) => format!("?\"{}\"", s),
         }
     }
 }
