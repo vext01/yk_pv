@@ -257,14 +257,14 @@ pub(crate) enum Type {
     #[deku(id = "TYKIND_INTEGER")]
     Integer(IntegerType),
     #[deku(id = "TYKIND_UNIMPLEMENTED")]
-    Unimplemented,
+    Unimplemented(#[deku(until = "|v: &u8| *v == 0", map = "deserialise_string")] String),
 }
 
 impl Type {
     fn const_to_str(&self, c: &Constant) -> String {
         match self {
             Self::Integer(it) => it.const_to_str(c),
-            Self::Unimplemented => String::from("SOMETYPE"),
+            Self::Unimplemented(s) => format!("?{}", s),
         }
     }
 }
@@ -425,6 +425,7 @@ mod tests {
         write_native_usize(&mut data, 1);
         // types[0].type_kind
         data.write_u8(TYKIND_UNIMPLEMENTED).unwrap();
+        write_str(&mut data, "a_type");
 
         let test_mod = deserialise_module(data.as_slice()).unwrap();
         let string_mod = test_mod.to_str();
@@ -438,7 +439,7 @@ mod tests {
 
 func foo {
   bb0:
-    $0_0 = alloca SOMETYPE
+    $0_0 = alloca ?a_type
     nop
   bb1:
     nop
