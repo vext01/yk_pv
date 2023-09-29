@@ -137,6 +137,7 @@ impl IRDisplay for Operand {
 #[deku_derive(DekuRead)]
 #[derive(Debug)]
 pub(crate) struct Instruction {
+    type_index: usize,
     opcode: Opcode,
     #[deku(temp)]
     num_operands: u32,
@@ -390,6 +391,8 @@ mod tests {
         write_native_usize(&mut data, 2);
         // funcs[0].blocks[0].num_instrs
         write_native_usize(&mut data, 2);
+        // funcs[0].blocks[0].instrs[0].type_index
+        write_native_usize(&mut data, 0);
         // funcs[0].blocks[0].instrs[0].opcode
         data.write_u8(Opcode::Alloca as u8).unwrap();
         // funcs[0].blocks[0].instrs[0].num_operands
@@ -398,12 +401,16 @@ mod tests {
         data.write_u8(OPKIND_CONST).unwrap();
         // funcs[0].blocks[0].instrs[0].operands[0].const_idx
         write_native_usize(&mut data, 0);
+        // funcs[0].blocks[0].instrs[1].type_index
+        write_native_usize(&mut data, 0);
         // funcs[0].blocks[0].instrs[1].opcode
         data.write_u8(Opcode::Nop as u8).unwrap();
         // funcs[0].blocks[0].instrs[1].num_operands
         data.write_u32::<NativeEndian>(0).unwrap();
         // funcs[0].blocks[1].num_instrs
         write_native_usize(&mut data, 1);
+        // funcs[0].blocks[1].instrs[0].type_index
+        write_native_usize(&mut data, 0);
         // funcs[0].blocks[1].instrs[0].opcode
         data.write_u8(Opcode::Nop as u8).unwrap();
         // funcs[0].blocks[1].instrs[0].num_operands
