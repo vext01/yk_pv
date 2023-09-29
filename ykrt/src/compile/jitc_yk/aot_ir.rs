@@ -44,7 +44,7 @@ pub(crate) trait IRDisplay {
 
 /// An instruction opcode.
 #[deku_derive(DekuRead)]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 #[deku(type = "u8")]
 pub(crate) enum Opcode {
     Nop = 0,
@@ -122,7 +122,7 @@ impl LocalVariableOperand {
 
 const OPKIND_CONST: u8 = 0;
 const OPKIND_LOCAL_VARIABLE: u8 = 1;
-const OPKIND_STRING: u8 = 2;
+const OPKIND_UNIMPLEMENTED: u8 = 255;
 
 #[deku_derive(DekuRead)]
 #[derive(Debug)]
@@ -132,8 +132,8 @@ pub(crate) enum Operand {
     Constant(ConstantOperand),
     #[deku(id = "OPKIND_LOCAL_VARIABLE")]
     LocalVariable(LocalVariableOperand),
-    #[deku(id = "OPKIND_STRING")]
-    String(#[deku(until = "|v: &u8| *v == 0", map = "deserialise_string")] String),
+    #[deku(id = "OPKIND_UNIMPLEMENTED")]
+    Unimplemented(#[deku(until = "|v: &u8| *v == 0", map = "deserialise_string")] String),
 }
 
 impl IRDisplay for Operand {
@@ -141,7 +141,7 @@ impl IRDisplay for Operand {
         match self {
             Self::Constant(c) => c.to_str(m),
             Self::LocalVariable(l) => l.to_str(m),
-            Self::String(s) => format!("?\"{}\"", s),
+            Self::Unimplemented(s) => format!("?op<{}>", s),
         }
     }
 }
@@ -169,6 +169,16 @@ impl Instruction {
 
 impl IRDisplay for Instruction {
     fn to_str(&self, m: &AOTModule) -> String {
+        if self.opcode == Opcode::Unimplemented {
+            debug_assert!(self.operands.len() == 1);
+            if let Operand::Unimplemented(s) = &self.operands[0] {
+                return format!("?inst<{}>", s);
+            } else {
+                // This would be an invalid serialisation.
+                panic!();
+            }
+        }
+
         if self.name.borrow().is_none() {
             m.compute_variable_names();
         }
@@ -293,7 +303,7 @@ impl Type {
     fn const_to_str(&self, c: &Constant) -> String {
         match self {
             Self::Integer(it) => it.const_to_str(c),
-            Self::Unimplemented(s) => format!("?{}", s),
+            Self::Unimplemented(s) => format!("?cst<{}>", s),
         }
     }
 }
@@ -302,7 +312,7 @@ impl IRDisplay for Type {
     fn to_str(&self, m: &AOTModule) -> String {
         match self {
             Self::Integer(i) => i.to_str(m),
-            Self::Unimplemented(s) => s.to_owned(),
+            Self::Unimplemented(s) => format!("?ty<{}>", s),
         }
     }
 }
@@ -416,7 +426,7 @@ pub(crate) fn deserialise_module(data: &[u8]) -> Result<AOTModule, Box<dyn Error
 mod tests {
     use super::{
         deserialise_module, deserialise_string, Opcode, FORMAT_VERSION, MAGIC, OPKIND_CONST,
-        TYKIND_UNIMPLEMENTED,
+        OPKIND_UNIMPLEMENTED, TYKIND_UNIMPLEMENTED,
     };
     use byteorder::{NativeEndian, WriteBytesExt};
     use std::ffi::CString;
@@ -470,9 +480,12 @@ mod tests {
         // funcs[0].blocks[1].instrs[0].type_index
         write_native_usize(&mut data, 0);
         // funcs[0].blocks[1].instrs[0].opcode
-        data.write_u8(Opcode::Nop as u8).unwrap();
+        data.write_u8(Opcode::Unimplemented as u8).unwrap();
         // funcs[0].blocks[1].instrs[0].num_operands
-        data.write_u32::<NativeEndian>(0).unwrap();
+        data.write_u32::<NativeEndian>(1).unwrap();
+        // funcs[0].blocks[1].instrs[0].operands[0].operand_kind
+        data.write_u8(OPKIND_UNIMPLEMENTED as u8).unwrap();
+        write_str(&mut data, "%3 = some_llvm_instruction ...");
 
         // funcs[1].name
         write_str(&mut data, "bar");
@@ -504,10 +517,10 @@ mod tests {
 
 func foo {
   bb0:
-    $0_0: a_type = alloca ?a_type
+    $0_0: ?ty<a_type> = alloca ?cst<a_type>
     nop
   bb1:
-    nop
+    ?inst<%3 = some_llvm_instruction ...>
 }
 
 func bar;
