@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <syscall.h>
+#include <threads.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -498,9 +499,10 @@ clean:
 /*
  * Initialise a collector context.
  */
-static void *cache_base_buf = NULL;
-static void *cache_aux_buf = NULL;
-static int cache_perf_fd = -1;
+static thread_local void *cache_base_buf = NULL;
+static thread_local void *cache_aux_buf = NULL;
+static thread_local int cache_perf_fd = -1;
+
 struct hwt_perf_ctx *
 hwt_perf_init_collector(struct hwt_perf_collector_config *tr_conf,
                         struct hwt_cerror *err) {
