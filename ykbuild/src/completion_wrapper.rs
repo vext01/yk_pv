@@ -86,6 +86,7 @@ impl CompletionWrapper {
         let mut entries = Vec::<String>::new();
 
         for path in glob(&format!("{}/*", self.tmpdir.path().to_str().unwrap())).unwrap() {
+            dbg!(&path);
             let mut infile = File::open(path.unwrap()).unwrap();
             let mut buf = String::new();
             infile.read_to_string(&mut buf).unwrap();
