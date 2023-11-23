@@ -318,18 +318,7 @@ struct IRBlock {
 };
 
 // An unmappable region of code spanning one or more machine blocks.
-struct UnmappableRegion {
-  // The effect executing the unmappable block had on the stack depth. This is
-  // the number of frames (not the size of the stack in bytes).
-  //
-  // Since each UnmappableRegion in a trace is followed by a mappable IRBlock,
-  // this value can be used to determine if the unmappable code:
-  //
-  //  - returned back to mappable code (StackAdjust < 0).
-  //  - called deeper into mappable code (StackAdjust > 0).
-  //  - "fell through" into mappable code (StackAdjust ==  0).
-  ssize_t StackAdjust;
-};
+struct UnmappableRegion {};
 
 class TraceLoc {
   std::variant<IRBlock, UnmappableRegion> Loc;
@@ -350,7 +339,7 @@ public:
     } else {
       UnmappableRegion *U = std::get_if<UnmappableRegion>(&Loc);
       assert(U);
-      errs() << "UnmappableRegion(StackAdjust=" << U->StackAdjust << ")\n";
+      errs() << "UnmappableRegion()\n";
     }
   }
 };
@@ -381,12 +370,8 @@ public:
     assert(Idx < Len);
     char *FuncName = FuncNames[Idx];
     if (FuncName == nullptr) {
-      // Subtle bitcast from `size_t` to `ssize_t`. When the trace was encoded
-      // into an FFI friendly format, unmappable blocks use the `Idx` field
-      // (a `size_t`) to encode the stack adjustment value (a `ssize_t`). The
-      // cast below reverses that.
       return TraceLoc(variant<IRBlock, UnmappableRegion>{
-          UnmappableRegion{llvm::bit_cast<ssize_t, size_t>(BBs[Idx])}});
+          UnmappableRegion{}});
     } else {
       return TraceLoc(
           variant<IRBlock, UnmappableRegion>{IRBlock{FuncName, BBs[Idx]}});
