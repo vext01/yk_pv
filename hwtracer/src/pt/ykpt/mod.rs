@@ -59,6 +59,7 @@ use std::{
 use thiserror::Error;
 use ykaddr::{
     self,
+    addr::vaddr_to_sym_and_obj,
     obj::{PHDR_MAIN_OBJ, PHDR_OBJECT_CACHE, SELF_BIN_PATH},
 };
 
@@ -217,6 +218,11 @@ pub(crate) struct YkPTBlockIterator<'t> {
     comprets: CompressedReturns,
     /// When `true` we have seen one of more `MODE.*` packets that are yet to be bound.
     unbound_modes: bool,
+    /// The number of elements the iterator should internally skip before handing out any more.
+    ///
+    /// This is required for cases where ykllvm inserted a call in the MIR which didn't previously
+    /// exist in the high-level IR. E.g. emulated TLS wrappers.
+    skip_elems: usize,
 }
 
 impl<'t> YkPTBlockIterator<'t> {
@@ -227,6 +233,7 @@ impl<'t> YkPTBlockIterator<'t> {
             tnts: VecDeque::new(),
             comprets: CompressedReturns::new(),
             unbound_modes: false,
+            skip_elems: 0,
         }
     }
 
@@ -282,12 +289,15 @@ impl<'t> YkPTBlockIterator<'t> {
             let target = call_info.target_off();
 
             if let Some(target_off) = target {
-                // This is a direct call.
+                // We know the target offset.
                 //
                 // PT won't compress returns from direct calls if the call target is the
                 // instruction address immediately after the call.
                 //
                 // See the Intel Manual, Section 33.4.2.2 for details.
+                //
+                // FIXME: who said it's a direct call?
+                // https://github.com/ykjit/yk/issues/914
                 if target_off != call_info.return_off() {
                     self.comprets
                         .push(CompRetAddr::AfterCall(call_info.callsite_off()));
@@ -295,13 +305,39 @@ impl<'t> YkPTBlockIterator<'t> {
                 self.cur_loc = ObjLoc::MainObj(target_off);
                 return Ok(Some(self.lookup_block_from_main_bin_offset(target_off)?));
             } else {
-                // This is an indirect call.
+                // We don't know the target offset.
                 self.comprets
                     .push(CompRetAddr::AfterCall(call_info.callsite_off()));
                 self.seek_tip()?;
                 return match self.cur_loc {
                     ObjLoc::MainObj(off) => Ok(Some(self.lookup_block_from_main_bin_offset(off)?)),
-                    ObjLoc::OtherObjOrUnknown(_) => Ok(Some(Block::Unknown)),
+                    ObjLoc::OtherObjOrUnknown(vaddr) => {
+                        if let Some(vaddr) = vaddr {
+                            let dli = vaddr_to_sym_and_obj(usize::try_from(vaddr).unwrap());
+                            // FIXME: matching "emu" is too generic.
+                            if dli
+                                .unwrap()
+                                .dli_sname()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .contains("emu")
+                            {
+                                // FIXME: doe we also need to detect the TLS wrapper in the case
+                                // where we do statically know the call target address?
+                                //
+                                // FIXME: improve this explanation.
+                                //
+                                // We've found a call to __emutls_get_address, which means the next
+                                // two blocks need to be skipped, so that they don't appear in the
+                                // IRTrace. This is because there is no matching call in the LLVM
+                                // IR allowing jitmodbuilder to outline these two blocks.
+                                debug_assert_eq!(self.skip_elems, 0);
+                                self.skip_elems = 2;
+                            }
+                        }
+                        Ok(Some(Block::Unknown))
+                    }
                 };
             }
         }
@@ -820,10 +856,18 @@ impl<'t> Iterator for YkPTBlockIterator<'t> {
     type Item = Result<Block, HWTracerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.do_next() {
-            Ok(b) => Some(Ok(b)),
-            Err(IteratorError::NoMorePackets) => None,
-            Err(IteratorError::HWTracerError(e)) => Some(Err(e)),
+        loop {
+            let next = match self.do_next() {
+                Ok(b) => Some(Ok(b)),
+                Err(IteratorError::NoMorePackets) => None,
+                Err(IteratorError::HWTracerError(e)) => Some(Err(e)),
+            };
+            if self.skip_elems == 0 {
+                return next;
+            } else {
+                // We have to skip this element. Go around again.
+                self.skip_elems -= 1;
+            }
         }
     }
 }
