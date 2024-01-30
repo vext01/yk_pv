@@ -145,17 +145,29 @@ impl IRDisplay for ConstantOperand {
 pub(crate) struct InstructionID {
     #[deku(skip)] // computed after deserialisation.
     func_idx: FuncIdx,
-    bb_idx: BlockIdx,
-    inst_idx: InstrIdx,
+    block_idx: BlockIdx,
+    instr_idx: InstrIdx,
 }
 
 impl InstructionID {
-    pub(crate) fn new(func_idx: FuncIdx, bb_idx: BlockIdx, inst_idx: InstrIdx) -> Self {
+    pub(crate) fn new(func_idx: FuncIdx, block_idx: BlockIdx, instr_idx: InstrIdx) -> Self {
         Self {
             func_idx,
-            bb_idx,
-            inst_idx,
+            block_idx,
+            instr_idx,
         }
+    }
+
+    pub(crate) fn func_idx(&self) -> FuncIdx {
+        self.func_idx
+    }
+
+    pub(crate) fn block_idx(&self) -> BlockIdx {
+        self.block_idx
+    }
+
+    pub(crate) fn instr_idx(&self) -> InstrIdx {
+        self.instr_idx
     }
 }
 
@@ -200,8 +212,8 @@ impl IRDisplay for LocalVariableOperand {
     fn to_str(&self, _m: &Module) -> String {
         format!(
             "${}_{}",
-            self.0.bb_idx.to_usize(),
-            self.0.inst_idx.to_usize()
+            self.0.block_idx.to_usize(),
+            self.0.instr_idx.to_usize()
         )
     }
 }
@@ -277,12 +289,14 @@ impl Operand {
     /// Panics for other kinds of operand.
     ///
     /// OPT: This is expensive.
-    pub(crate) fn to_instr<'a>(&self, aotmod: &'a Module) -> &'a Instruction {
+    pub(crate) fn to_instr<'a>(&self, aot_mod: &'a Module) -> &'a Instruction {
         match self {
             Self::LocalVariable(lvo) => {
                 let iid = lvo.instr_id();
-                &aotmod.funcs[iid.func_idx.to_usize()].blocks[iid.bb_idx.to_usize()].instrs
-                    [lvo.instr_id().inst_idx.to_usize()]
+                aot_mod
+                    .func(iid.func_idx())
+                    .block(iid.block_idx())
+                    .instr(iid.instr_idx())
             }
             _ => panic!(),
         }
@@ -294,7 +308,7 @@ impl Operand {
         match self {
             Self::LocalVariable(lvo) => {
                 let iid = lvo.instr_id();
-                InstructionID::new(iid.func_idx, iid.bb_idx, iid.inst_idx)
+                InstructionID::new(iid.func_idx(), iid.block_idx(), iid.instr_idx())
             }
             _ => panic!(),
         }
@@ -465,6 +479,12 @@ impl IRDisplay for Block {
     }
 }
 
+impl Block {
+    fn instr(&self, idx: InstrIdx) -> &Instruction {
+        &self.instrs[idx.to_usize()]
+    }
+}
+
 /// A function.
 #[deku_derive(DekuRead)]
 #[derive(Debug)]
@@ -483,9 +503,9 @@ impl<'a> Function {
         self.blocks.is_empty()
     }
 
-    /// Return the block at the specified index, or `None` if the index is out of range.
-    pub(crate) fn block(&self, bb_idx: BlockIdx) -> Option<&Block> {
-        self.blocks.get(bb_idx.to_usize())
+    /// Return the block at the specified index.
+    pub(crate) fn block(&self, bb_idx: BlockIdx) -> &Block {
+        &self.blocks[bb_idx.to_usize()]
     }
 
     #[cfg(test)]
@@ -787,6 +807,18 @@ impl Module {
             .map(|(f_idx, _)| FuncIdx(f_idx))
     }
 
+    pub(crate) fn func(&self, idx: FuncIdx) -> &Function {
+        &self.funcs[idx.to_usize()]
+    }
+
+    pub(crate) fn type_(&self, idx: TypeIdx) -> &Type {
+        &self.types[idx.to_usize()]
+    }
+
+    //pub(crate) fn const_(&self, idx: ConstIdx) -> &Constant {
+    //    &self.consts[idx.to_usize()]
+    //}
+
     /// Look up a `FuncType` by its index.
     ///
     /// # Panics
@@ -794,16 +826,14 @@ impl Module {
     /// Panics if the type index is either out of bounds, or the corresponding type is not a
     /// function type.
     pub(crate) fn func_ty(&self, func_idx: FuncIdx) -> &FuncType {
-        match self.types[self.funcs[func_idx.to_usize()].type_idx.to_usize()] {
+        match self.type_(self.func(func_idx).type_idx) {
             Type::Func(ref ft) => &ft,
             _ => panic!(),
         }
     }
 
-    pub(crate) fn block(&self, bid: &BlockID) -> Option<&Block> {
-        self.funcs
-            .get(bid.func_idx.to_usize())?
-            .block(bid.block_idx)
+    pub(crate) fn block(&self, bid: &BlockID) -> &Block {
+        self.func(bid.func_idx).block(bid.block_idx)
     }
 
     /// Fill in the function index of local variable operands of instructions.
@@ -828,7 +858,7 @@ impl Module {
     ///
     /// It is UB to pass an `instr` that is not from the `Module` referenced by `self`.
     pub(crate) fn instr_type(&self, instr: &Instruction) -> &Type {
-        &self.types[instr.type_idx.to_usize()]
+        &self.type_(instr.type_idx)
     }
 
     // FIXME: rename this to `is_def()`, which we've decided is a beter name.

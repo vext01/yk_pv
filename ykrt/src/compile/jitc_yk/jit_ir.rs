@@ -80,6 +80,10 @@ macro_rules! index_16bit {
             pub(crate) fn to_u16(&self) -> u16 {
                 self.0.into()
             }
+
+            pub(crate) fn to_usize(&self) -> usize {
+                self.0.into()
+            }
         }
     };
 }
@@ -347,6 +351,11 @@ impl CallInstruction {
         unsafe { ptr::read_unaligned(unaligned) }
     }
 
+    fn extra(&self) -> ExtraArgsIdx {
+        let unaligned = ptr::addr_of!(self.extra);
+        unsafe { ptr::read_unaligned(unaligned) }
+    }
+
     /// Fetch the operand at the specified index.
     ///
     /// It is undefined behaviour to provide an out-of-bounds index.
@@ -355,16 +364,17 @@ impl CallInstruction {
         aot_mod: &aot_ir::Module,
         jit_mod: &Module,
         idx: usize,
-    ) -> Option<Operand> {
+    ) -> Operand {
         #[cfg(debug_assertions)]
         {
             let ft = aot_mod.func_ty(self.target.into_aot());
             debug_assert!(ft.num_args() > idx);
         }
         if idx == 0 {
-            Some(self.arg1().get())
+            self.arg1().get()
         } else {
-            Some(jit_mod.extra_args[usize::try_from(self.extra.0).unwrap() + idx - 1].clone())
+            let extra_idx = ExtraArgsIdx::new(self.extra().to_usize() + idx - 1);
+            jit_mod.extra_arg(extra_idx).clone()
         }
     }
 }
@@ -427,6 +437,10 @@ impl Module {
         let idx = self.extra_args.len();
         self.extra_args.extend_from_slice(ops); // FIXME: this clones.
         ExtraArgsIdx(u16::try_from(idx).unwrap()) // FIXME: propagate error
+    }
+
+    fn extra_arg(&self, idx: ExtraArgsIdx) -> &Operand {
+        &self.extra_args[idx.to_usize()]
     }
 
     /// Push a new constant into the constant table and return its index.
@@ -536,15 +550,15 @@ mod tests {
 
         assert_eq!(
             ci.operand(&aot_mod, &jit_mod, 0),
-            Some(Operand::Local(InstrIdx(0)))
+            Operand::Local(InstrIdx(0))
         );
         assert_eq!(
             ci.operand(&aot_mod, &jit_mod, 1),
-            Some(Operand::Local(InstrIdx(1)))
+            Operand::Local(InstrIdx(1))
         );
         assert_eq!(
             ci.operand(&aot_mod, &jit_mod, 2),
-            Some(Operand::Local(InstrIdx(2)))
+            Operand::Local(InstrIdx(2))
         );
         assert_eq!(
             jit_mod.extra_args,
