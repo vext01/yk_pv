@@ -4,6 +4,7 @@
 //! (immutable) ahead-of-time compiled interpreter.
 
 use byteorder::{NativeEndian, ReadBytesExt};
+use core::{marker::PhantomData, ops::Index};
 use deku::prelude::*;
 use std::{cell::RefCell, error::Error, ffi::CStr, fs, io::Cursor, path::PathBuf};
 
@@ -14,6 +15,47 @@ const FORMAT_VERSION: u32 = 0;
 
 /// The symbol name of the control point function (after ykllvm has transformed it).
 const CONTROL_POINT_NAME: &str = "__ykrt_control_point";
+
+pub(crate) trait TypedIdx {
+    fn raw_idx(&self) -> usize;
+}
+
+#[derive(Debug)]
+#[deku_derive(DekuRead)]
+pub(crate) struct TypedIdxVec<'a, I, E: DekuRead<'a>> {
+    v: Vec<E>,
+    _pd: PhantomData<I>,
+    _pd2: PhantomData<&'a()>,
+}
+
+impl<'a, I, E: DekuRead<'a>> Default for TypedIdxVec<'a, I, E> {
+    fn default() -> Self {
+        Self { v: Vec::new(), _pd: PhantomData, _pd2: &() }
+    }
+}
+
+impl<I: TypedIdx, E> TypedIdxVec<I, E> {
+    pub(crate) fn get(&self, idx: I) -> Option<&E> {
+        self.v.get(idx.raw_idx())
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.v.len()
+    }
+
+    #[cfg(test)]
+    fn push(&mut self, e: E) {
+        self.v.push(e);
+    }
+}
+
+impl<I: TypedIdx, E> Index<I> for TypedIdxVec<I, E> {
+    type Output = E;
+
+    fn index(&self, idx: I) -> &Self::Output {
+        &self.v[idx.raw_idx()]
+    }
+}
 
 // Generate common methods for index types.
 macro_rules! index {
@@ -26,6 +68,12 @@ macro_rules! index {
 
             pub(crate) fn to_usize(&self) -> usize {
                 self.0
+            }
+        }
+
+        impl TypedIdx for $struct {
+            fn raw_idx(&self) -> usize {
+                self.to_usize()
             }
         }
     };
@@ -306,7 +354,7 @@ impl IRDisplay for Operand {
         match self {
             Self::Constant(c) => c.to_str(m),
             Self::LocalVariable(l) => l.to_str(m),
-            Self::Type(t) => m.types[t.type_idx.to_usize()].to_str(m),
+            Self::Type(t) => m.types[t.type_idx].to_str(m),
             Self::Function(f) => m.funcs[f.func_idx.0].name.to_owned(),
             Self::Block(bb) => bb.to_str(m),
             Self::Arg(a) => a.to_str(m),
@@ -500,7 +548,7 @@ impl<'a> Function {
 
 impl IRDisplay for Function {
     fn to_str(&self, m: &Module) -> String {
-        let ty = &m.types[self.type_idx.to_usize()];
+        let ty = &m.types[self.type_idx];
         if let Type::Func(fty) = ty {
             let mut ret = format!(
                 "func {}({}",
@@ -508,7 +556,7 @@ impl IRDisplay for Function {
                 fty.arg_tys
                     .iter()
                     .enumerate()
-                    .map(|(i, t)| format!("$arg{}: {}", i, m.types[*t].to_str(m)))
+                    .map(|(i, t)| format!("$arg{}: {}", i, m.types[t].to_str(m)))
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -584,7 +632,7 @@ pub(crate) struct FuncType {
     num_args: usize,
     /// Type indices for the function's formal arguments.
     #[deku(count = "num_args")]
-    arg_tys: Vec<usize>,
+    arg_tys: Vec<TypeIdx>,
     /// Type index of the function's return type.
     ret_ty: TypeIdx,
     /// Is the function vararg?
@@ -597,7 +645,7 @@ impl FuncType {
     }
 
     #[cfg(test)]
-    pub(crate) fn new(arg_tys: Vec<usize>, ret_ty: TypeIdx, is_vararg: bool) -> Self {
+    pub(crate) fn new(arg_tys: Vec<TypeIdx>, ret_ty: TypeIdx, is_vararg: bool) -> Self {
         Self {
             arg_tys,
             ret_ty,
@@ -628,7 +676,7 @@ impl IRDisplay for StructType {
                 .field_tys
                 .iter()
                 .enumerate()
-                .map(|(i, ti)| format!("{}: {}", self.field_bit_offs[i], m.types[*ti].to_str(m)))
+                .map(|(i, ti)| format!("{}: {}", self.field_bit_offs[i], m.types[TypeIdx::new(*ti)].to_str(m)))
                 .collect::<Vec<_>>()
                 .join(", "),
         );
@@ -721,7 +769,7 @@ pub(crate) struct Constant {
 
 impl IRDisplay for Constant {
     fn to_str(&self, m: &Module) -> String {
-        m.types[self.type_idx.to_usize()].const_to_str(self)
+        m.types[self.type_idx].const_to_str(self)
     }
 }
 
@@ -746,7 +794,7 @@ pub(crate) struct Module {
     #[deku(temp)]
     num_types: usize,
     #[deku(count = "num_types")]
-    types: Vec<Type>,
+    types: TypedIdxVec<TypeIdx, Type>,
     /// Have local variable names been computed?
     ///
     /// Names are computed on-demand when an instruction is printed for the first time.
