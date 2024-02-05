@@ -134,6 +134,7 @@ pub(crate) enum Opcode {
     BinaryOperator,
     Ret,
     InsertValue,
+    PtrAdd,
     Unimplemented = 255,
 }
 

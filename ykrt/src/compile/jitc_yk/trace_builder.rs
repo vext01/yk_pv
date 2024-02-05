@@ -92,9 +92,11 @@ impl<'a> TraceBuilder<'a> {
 
         // Decide how to translate each AOT instruction based upon its opcode.
         for (inst_idx, inst) in blk.instrs.iter().enumerate() {
+            eprintln!("process: {}", inst.to_str(self.aot_mod));
             let jit_inst = match inst.opcode() {
                 aot_ir::Opcode::Load => self.handle_load(inst),
                 aot_ir::Opcode::Call => self.handle_call(inst),
+                aot_ir::Opcode::Store => self.handle_store(inst),
                 _ => todo!("{:?}", inst),
             }?;
 
@@ -110,6 +112,7 @@ impl<'a> TraceBuilder<'a> {
 
             // Insert the newly-translated instruction into the JIT module.
             self.jit_mod.push(jit_inst);
+            eprintln!("{}", self.jit_mod);
         }
         Ok(())
     }
@@ -163,6 +166,16 @@ impl<'a> TraceBuilder<'a> {
         Ok(jit_ir::CallInstruction::new(&mut self.jit_mod, inst.callee(), &args)?.into())
     }
 
+    fn handle_store(
+        &mut self,
+        inst: &aot_ir::Instruction,
+    ) -> Result<jit_ir::Instruction, CompilationError> {
+        let val = self.handle_operand(inst.operand(0))?;
+        let ptr = self.handle_operand(inst.operand(1))?;
+        Ok(jit_ir::StoreInstruction::new(val, ptr).into())
+    }
+
+
     /// Entry point for building an IR trace.
     ///
     /// Consumes the trace builder, returning a JIT module.
@@ -177,7 +190,14 @@ impl<'a> TraceBuilder<'a> {
         // don't think this assumption necessarily holds any more. Investigate.
         self.create_trace_header(self.aot_mod.block(&firstblk.unwrap()))?;
 
+        let mut first = true;
         for tblk in self.mtrace {
+            // FIXME: gross hack that can be killed when this is merged:
+            // https://github.com/ykjit/yk/pull/954
+            if first {
+                first = false;
+                continue;
+            }
             match self.lookup_aot_block(tblk) {
                 Some(bid) => {
                     // Mapped block
