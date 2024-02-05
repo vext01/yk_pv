@@ -518,11 +518,19 @@ impl MT {
                     }
                     mt.stats.trace_compiled_ok();
                 }
+                #[cfg(not(yk_jitstate_debug))]
                 Err(CompilationError::Temporary(_e)) => {
+                    // If you change this arm, keep the below arm in sync.
+                    mt.stats.trace_compiled_err();
+                    hl_arc.lock().trace_failed(&mt);
+                }
+                #[cfg(yk_jitstate_debug)]
+                Err(CompilationError::Temporary(e)) => {
+                    // If you change this arm, keep the above arm in sync.
                     mt.stats.trace_compiled_err();
                     hl_arc.lock().trace_failed(&mt);
                     #[cfg(feature = "yk_jitstate_debug")]
-                    print_jit_state(&format!("trace-compilation-aborted<reason=\"{}\">", _e));
+                    print_jit_state(&format!("trace-compilation-aborted<reason=\"{}\">", e));
                 }
                 Err(CompilationError::Unrecoverable(e)) => panic!("{}", e),
             }
