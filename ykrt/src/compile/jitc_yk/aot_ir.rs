@@ -3,7 +3,7 @@
 //! This is a parser for the on-disk (in the ELF binary) IR format used to express the
 //! (immutable) ahead-of-time compiled interpreter.
 
-use super::{CompilationError, CompilationResult};
+use super::CompilationError;
 use byteorder::{NativeEndian, ReadBytesExt};
 use deku::prelude::*;
 use std::{cell::RefCell, ffi::CStr, fs, io::Cursor, path::PathBuf};
@@ -891,7 +891,7 @@ impl Module {
 }
 
 /// Deserialise an AOT module from the slice `data`.
-pub(crate) fn deserialise_module(data: &[u8]) -> CompilationResult<Module> {
+pub(crate) fn deserialise_module(data: &[u8]) -> Result<Module, CompilationError> {
     match Module::from_bytes((data, 0)) {
         Ok(((_, _), mut modu)) => {
             modu.compute_local_operand_func_indices();
@@ -904,7 +904,7 @@ pub(crate) fn deserialise_module(data: &[u8]) -> CompilationResult<Module> {
 /// Deserialise and print IR from an on-disk file.
 ///
 /// Used for support tooling (in turn used by tests too).
-pub fn print_from_file(path: &PathBuf) -> CompilationResult<()> {
+pub fn print_from_file(path: &PathBuf) -> Result<(), CompilationError> {
     let data = fs::read(path).map_err(|e| CompilationError::Unrecoverable(e.to_string()))?;
     let ir = deserialise_module(&data)?;
     println!("{}", ir.to_str());

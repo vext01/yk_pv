@@ -1,6 +1,6 @@
 //! Yk's built-in trace compiler.
 
-use super::{CompilationError, CompilationResult};
+use super::CompilationError;
 use crate::{
     compile::{CompiledTrace, Compiler},
     location::HotLocation,
@@ -25,7 +25,7 @@ enum IRPhase {
 }
 
 impl IRPhase {
-    fn from_str(s: &str) -> CompilationResult<Self> {
+    fn from_str(s: &str) -> Result<Self, CompilationError> {
         match s {
             "aot" => Ok(Self::AOT),
             "jit-pre-opt" => Ok(Self::PreOpt),
@@ -63,7 +63,7 @@ impl Compiler for JITCYk {
         mtrace: Vec<TracedAOTBlock>,
         sti: Option<SideTraceInfo>,
         _hl: Arc<Mutex<HotLocation>>,
-    ) -> CompilationResult<CompiledTrace> {
+    ) -> Result<CompiledTrace, CompilationError> {
         if sti.is_some() {
             todo!();
         }
@@ -90,12 +90,12 @@ impl Compiler for JITCYk {
 }
 
 impl JITCYk {
-    pub(crate) fn new() -> CompilationResult<Arc<Self>> {
+    pub(crate) fn new() -> Result<Arc<Self>, CompilationError> {
         Ok(Arc::new(Self {}))
     }
 }
 
-pub(crate) fn yk_ir_section() -> CompilationResult<&'static [u8]> {
+pub(crate) fn yk_ir_section() -> Result<&'static [u8], CompilationError> {
     let start = symbol_vaddr(&CString::new("ykllvm.yk_ir.start").unwrap()).ok_or(
         CompilationError::Unrecoverable("couldn't find ykllvm.yk_ir.start".into()),
     )?;

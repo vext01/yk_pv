@@ -2,7 +2,7 @@
 //! to be compiled with LLVM.
 
 use crate::{
-    compile::{CompilationError, CompilationResult, CompiledTrace, Compiler},
+    compile::{CompilationError, CompiledTrace, Compiler},
     location::HotLocation,
     mt::{SideTraceInfo, MT},
     trace::TracedAOTBlock,
@@ -35,7 +35,7 @@ impl Compiler for JITCLLVM {
         irtrace: Vec<TracedAOTBlock>,
         sti: Option<SideTraceInfo>,
         hl: Arc<Mutex<HotLocation>>,
-    ) -> CompilationResult<CompiledTrace> {
+    ) -> Result<CompiledTrace, CompilationError> {
         let (func_names, bbs, trace_len) = self.encode_trace(&irtrace);
 
         let llvmbc = llvmbc_section();

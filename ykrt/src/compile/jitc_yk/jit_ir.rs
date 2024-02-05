@@ -6,7 +6,7 @@
 // FIXME: eventually delete.
 #![allow(dead_code)]
 
-use crate::compile::{CompilationError, CompilationResult};
+use crate::compile::CompilationError;
 
 use super::aot_ir;
 use std::{fmt, mem, ptr};
@@ -64,7 +64,7 @@ macro_rules! index_24bit {
     ($struct:ident) => {
         impl $struct {
             /// Convert an AOT index to a reduced-size JIT index (if possible).
-            pub(crate) fn from_aot(aot_idx: aot_ir::$struct) -> CompilationResult<$struct> {
+            pub(crate) fn from_aot(aot_idx: aot_ir::$struct) -> Result<$struct, CompilationError> {
                 U24::from_usize(usize::from(aot_idx))
                     .ok_or(index_overflow(stringify!($struct)))
                     .map(|u| Self(u))
@@ -82,7 +82,7 @@ macro_rules! index_24bit {
 macro_rules! index_16bit {
     ($struct:ident) => {
         impl $struct {
-            pub(crate) fn new(v: usize) -> CompilationResult<Self> {
+            pub(crate) fn new(v: usize) -> Result<Self, CompilationError> {
                 u16::try_from(v)
                     .map_err(|_| index_overflow(stringify!($struct)))
                     .map(|u| Self(u))
@@ -336,7 +336,7 @@ impl CallInstruction {
         m: &mut Module,
         target: aot_ir::FuncIdx,
         args: &[Operand],
-    ) -> CompilationResult<CallInstruction> {
+    ) -> Result<CallInstruction, CompilationError> {
         let mut arg1 = PackedOperand::default();
         let mut extra = ExtraArgsIdx::default();
 
@@ -434,21 +434,21 @@ impl Module {
     }
 
     /// Push a slice of extra arguments into the extra arg table.
-    fn push_extra_args(&mut self, ops: &[Operand]) -> CompilationResult<ExtraArgsIdx> {
+    fn push_extra_args(&mut self, ops: &[Operand]) -> Result<ExtraArgsIdx, CompilationError> {
         let idx = self.extra_args.len();
         self.extra_args.extend_from_slice(ops); // FIXME: this clones.
         ExtraArgsIdx::new(idx)
     }
 
     /// Push a new constant into the constant table and return its index.
-    pub(crate) fn push_const(&mut self, constant: Constant) -> CompilationResult<ConstIdx> {
+    pub(crate) fn push_const(&mut self, constant: Constant) -> Result<ConstIdx, CompilationError> {
         let idx = self.consts.len();
         self.consts.push(constant);
         ConstIdx::new(idx)
     }
 
     /// Get the index of a type, inserting it in the type table if necessary.
-    pub fn const_idx(&mut self, c: &Constant) -> CompilationResult<ConstIdx> {
+    pub fn const_idx(&mut self, c: &Constant) -> Result<ConstIdx, CompilationError> {
         // FIXME: can we optimise this?
         for (idx, tc) in self.consts.iter().enumerate() {
             if tc == c {

@@ -35,8 +35,6 @@ pub enum CompilationError {
     Temporary(String),
 }
 
-pub type CompilationResult<T> = Result<T, CompilationError>;
-
 /// The trait that every JIT compiler backend must implement.
 pub(crate) trait Compiler: Send + Sync {
     /// Compile a mapped trace into machine code.
@@ -46,10 +44,10 @@ pub(crate) trait Compiler: Send + Sync {
         irtrace: Vec<TracedAOTBlock>,
         sti: Option<SideTraceInfo>,
         hl: Arc<Mutex<HotLocation>>,
-    ) -> CompilationResult<CompiledTrace>;
+    ) -> Result<CompiledTrace, CompilationError>;
 }
 
-pub(crate) fn default_compiler() -> CompilationResult<Arc<dyn Compiler>> {
+pub(crate) fn default_compiler() -> Result<Arc<dyn Compiler>, CompilationError> {
     #[cfg(jitc_yk)]
     // Transitionary env var to turn on the new code generator.
     //

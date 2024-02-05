@@ -1,7 +1,7 @@
 //! The trace builder.
 
 use super::aot_ir::{self, IRDisplay, Module};
-use super::{jit_ir, CompilationResult};
+use super::jit_ir;
 use crate::compile::CompilationError;
 use crate::trace::TracedAOTBlock;
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ impl<'a> TraceBuilder<'a> {
     }
 
     /// Create the prolog of the trace.
-    fn create_trace_header(&mut self, blk: &aot_ir::Block) -> CompilationResult<()> {
+    fn create_trace_header(&mut self, blk: &aot_ir::Block) -> Result<(), CompilationError> {
         // Find trace input variables and emit `LoadArg` instructions for them.
         let mut last_store = None;
         let mut trace_input = None;
@@ -86,7 +86,7 @@ impl<'a> TraceBuilder<'a> {
     }
 
     /// Walk over a traced AOT block, translating the constituent instructions into the JIT module.
-    fn process_block(&mut self, bid: aot_ir::BlockID) -> CompilationResult<()> {
+    fn process_block(&mut self, bid: aot_ir::BlockID) -> Result<(), CompilationError> {
         // unwrap safe: can't trace a block not in the AOT module.
         let blk = self.aot_mod.block(&bid);
 
@@ -114,12 +114,15 @@ impl<'a> TraceBuilder<'a> {
         Ok(())
     }
 
-    fn next_instr_id(&self) -> CompilationResult<jit_ir::InstrIdx> {
+    fn next_instr_id(&self) -> Result<jit_ir::InstrIdx, CompilationError> {
         jit_ir::InstrIdx::new(self.jit_mod.len())
     }
 
     /// Translate an operand.
-    fn handle_operand(&mut self, op: &aot_ir::Operand) -> CompilationResult<jit_ir::Operand> {
+    fn handle_operand(
+        &mut self,
+        op: &aot_ir::Operand,
+    ) -> Result<jit_ir::Operand, CompilationError> {
         let ret = match op {
             aot_ir::Operand::LocalVariable(lvo) => {
                 let instridx = self.local_map[lvo.instr_id()];
@@ -141,7 +144,7 @@ impl<'a> TraceBuilder<'a> {
     fn handle_load(
         &mut self,
         inst: &aot_ir::Instruction,
-    ) -> CompilationResult<jit_ir::Instruction> {
+    ) -> Result<jit_ir::Instruction, CompilationError> {
         let jit_op = self.handle_operand(inst.operand(0))?;
         Ok(
             jit_ir::LoadInstruction::new(jit_op, jit_ir::TypeIdx::from_aot(inst.type_idx())?)
@@ -152,7 +155,7 @@ impl<'a> TraceBuilder<'a> {
     fn handle_call(
         &mut self,
         inst: &aot_ir::Instruction,
-    ) -> CompilationResult<jit_ir::Instruction> {
+    ) -> Result<jit_ir::Instruction, CompilationError> {
         let mut args = Vec::new();
         for arg in inst.remaining_operands(1) {
             args.push(self.handle_operand(arg)?);
@@ -163,7 +166,7 @@ impl<'a> TraceBuilder<'a> {
     /// Entry point for building an IR trace.
     ///
     /// Consumes the trace builder, returning a JIT module.
-    fn build(mut self) -> CompilationResult<jit_ir::Module> {
+    fn build(mut self) -> Result<jit_ir::Module, CompilationError> {
         let first_blk = match self.mtrace.get(0) {
             Some(b) => Ok(b),
             None => Err(CompilationError::Unrecoverable("empty trace".into())),
@@ -194,7 +197,7 @@ impl<'a> TraceBuilder<'a> {
 pub(super) fn build(
     aot_mod: &Module,
     mtrace: &Vec<TracedAOTBlock>,
-) -> CompilationResult<jit_ir::Module> {
+) -> Result<jit_ir::Module, CompilationError> {
     // FIXME: the XXX below should be a thread-safe monotonically incrementing integer.
     TraceBuilder::new("__yk_compiled_trace_XXX".into(), aot_mod, mtrace).build()
 }
