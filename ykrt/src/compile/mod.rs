@@ -9,8 +9,7 @@ use parking_lot::Mutex;
 use std::slice;
 use std::{
     collections::HashMap,
-    env,
-    fmt::{self, Display, Formatter},
+    env, fmt,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Weak,
@@ -33,43 +32,10 @@ pub enum CompilationError {
     #[error("Unrecoverable error: {0}")]
     Unrecoverable(String),
     #[error("Temporary error: {0}")]
-    Temporary(TemporaryErrorKind),
-}
-
-impl CompilationError {
-    pub fn new_jitir_index_overflow(which: String) -> Self {
-        Self::Temporary(TemporaryErrorKind::JITIRIndexOverflow(which))
-    }
+    Temporary(String),
 }
 
 pub type CompilationResult<T> = Result<T, CompilationError>;
-
-#[derive(Debug)]
-pub enum TemporaryErrorKind {
-    /// One of [crate::compile::jitc_yk::jit_ir]'s index types was exhausted.
-    ///
-    /// In such cases it is beneficial to abort tracing anyway, as the trace is likely to be too
-    /// large to be a good compilation candidate.
-    ///
-    /// The string inside indicates what kind of index was exhausted.
-    JITIRIndexOverflow(String),
-    /// An unknown LLVM trace compiler backend error.
-    ///
-    /// FIXME: This is used only for the LLVM JIT backend, which we plan to delete. At that point
-    /// we can delete this error kind too.
-    LLVMBackend,
-}
-
-impl Display for TemporaryErrorKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            TemporaryErrorKind::JITIRIndexOverflow(ref w) => {
-                write!(f, "jit_ir index overflow: {}", w)
-            }
-            TemporaryErrorKind::LLVMBackend => write!(f, "unknoown LLVM backend error"),
-        }
-    }
-}
 
 /// The trait that every JIT compiler backend must implement.
 pub(crate) trait Compiler: Send + Sync {

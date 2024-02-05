@@ -6,7 +6,7 @@
 // FIXME: eventually delete.
 #![allow(dead_code)]
 
-use crate::compile::{CompilationError, CompilationResult, TemporaryErrorKind};
+use crate::compile::{CompilationError, CompilationResult};
 
 use super::aot_ir;
 use std::{fmt, mem, ptr};
@@ -56,7 +56,7 @@ impl U24 {
 
 /// Helper to create index overflow errors.
 fn index_overflow(typ: &str) -> CompilationError {
-    CompilationError::Temporary(TemporaryErrorKind::JITIRIndexOverflow(typ.into()))
+    CompilationError::Temporary(format!("index overflow: {}", typ))
 }
 
 // Generate common methods for 24-bit index types.

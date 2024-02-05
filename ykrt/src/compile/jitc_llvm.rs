@@ -2,7 +2,7 @@
 //! to be compiled with LLVM.
 
 use crate::{
-    compile::{CompilationError, CompilationResult, CompiledTrace, Compiler, TemporaryErrorKind},
+    compile::{CompilationError, CompilationResult, CompiledTrace, Compiler},
     location::HotLocation,
     mt::{SideTraceInfo, MT},
     trace::TracedAOTBlock,
@@ -64,7 +64,7 @@ impl Compiler for JITCLLVM {
             // The LLVM backend is now legacy code and is pending deletion, so it's not worth us
             // spending time auditing all of the failure modes and categorising them into
             // recoverable/temporary. So for now we say any error is temporary.
-            Err(CompilationError::Temporary(TemporaryErrorKind::LLVMBackend))
+            Err(CompilationError::Temporary("llvm backend error".into()))
         } else {
             Ok(CompiledTrace::new(mt, ret, di_tmp, Arc::downgrade(&hl)))
         }
