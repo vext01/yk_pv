@@ -518,11 +518,11 @@ impl MT {
                     }
                     mt.stats.trace_compiled_ok();
                 }
-                Err(CompilationError::Temporary(e)) => {
+                Err(CompilationError::Temporary(_e)) => {
                     mt.stats.trace_compiled_err();
                     hl_arc.lock().trace_failed(&mt);
                     #[cfg(feature = "yk_jitstate_debug")]
-                    print_jit_state(&format!("trace-compilation-aborted<reason=\"{}\">", e));
+                    print_jit_state(&format!("trace-compilation-aborted<reason=\"{}\">", _e));
                 }
                 Err(CompilationError::Unrecoverable(e)) => panic!("{}", e),
             }
