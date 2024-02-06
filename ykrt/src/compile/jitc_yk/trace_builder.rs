@@ -184,20 +184,25 @@ impl<'a> TraceBuilder<'a> {
             Some(b) => Ok(b),
             None => Err(CompilationError::Unrecoverable("empty trace".into())),
         }?;
-        let firstblk = self.lookup_aot_block(first_blk);
-        // FIXME: This unwrap assumes the first block is mappable, but Laurie just merged a change
-        // that strips the initial block (the block we return to from the control point), so I
-        // don't think this assumption necessarily holds any more. Investigate.
+
+        // Find the block containing the control point call. This is the (sole) predecessor of the
+        // first (guaranteed mappable) block in the trace.
+        let prev = match first_blk {
+            TracedAOTBlock::Mapped { func_name, bb } => {
+                debug_assert!(*bb > 0);
+                // It's `- 1` due to the way the ykllvm block splitting pass works.
+                TracedAOTBlock::Mapped {
+                    func_name: func_name.clone(),
+                    bb: bb - 1,
+                }
+            }
+            TracedAOTBlock::Unmappable => panic!(),
+        };
+
+        let firstblk = self.lookup_aot_block(&prev);
         self.create_trace_header(self.aot_mod.block(&firstblk.unwrap()))?;
 
-        let mut first = true;
         for tblk in self.mtrace {
-            // FIXME: gross hack that can be killed when this is merged:
-            // https://github.com/ykjit/yk/pull/954
-            if first {
-                first = false;
-                continue;
-            }
             match self.lookup_aot_block(tblk) {
                 Some(bid) => {
                     // Mapped block
