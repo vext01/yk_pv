@@ -63,7 +63,7 @@ impl<'a> TraceBuilder<'a> {
             if inst.is_store() {
                 last_store = Some(inst);
             }
-            if inst.is_gep() {
+            if inst.is_ptr_add() {
                 let op = inst.operand(0);
                 // unwrap safe: we know the AOT code was produced by ykllvm.
                 if trace_input
@@ -76,8 +76,7 @@ impl<'a> TraceBuilder<'a> {
                     let inp = last_store.unwrap().operand(0);
                     input.insert(0, inp.to_instr(self.aot_mod));
                     let load_arg = jit_ir::LoadArgInstruction::new().into();
-                    self.local_map
-                        .insert(inp.to_instr_id(), self.next_instr_id()?);
+                    self.local_map.insert(inp.to_instr_id(), self.next_instr_id()?);
                     self.jit_mod.push(load_arg);
                 }
             }
@@ -92,6 +91,7 @@ impl<'a> TraceBuilder<'a> {
 
         // Decide how to translate each AOT instruction based upon its opcode.
         for (inst_idx, inst) in blk.instrs.iter().enumerate() {
+            eprintln!("{}", self.jit_mod);
             eprintln!("process: {}", inst.to_str(self.aot_mod));
             let jit_inst = match inst.opcode() {
                 aot_ir::Opcode::Load => self.handle_load(inst),

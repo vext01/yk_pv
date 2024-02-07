@@ -127,7 +127,6 @@ pub(crate) enum Opcode {
     Store,
     Alloca,
     Call,
-    GetElementPtr,
     Br,
     CondBr,
     Icmp,
@@ -259,12 +258,27 @@ impl IRDisplay for ArgOperand {
     }
 }
 
+/// An operand that describes a global variable (by name).
+#[deku_derive(DekuRead)]
+#[derive(Debug)]
+pub(crate) struct GlobalOperand {
+    #[deku(until = "|v: &u8| *v == 0", map = "deserialise_string")]
+    name: String,
+}
+
+impl IRDisplay for GlobalOperand {
+    fn to_str(&self, _m: &Module) -> String {
+        format!("global<{}>", self.name)
+    }
+}
+
 const OPKIND_CONST: u8 = 0;
 const OPKIND_LOCAL_VARIABLE: u8 = 1;
 const OPKIND_TYPE: u8 = 2;
 const OPKIND_FUNCTION: u8 = 3;
 const OPKIND_BLOCK: u8 = 4;
 const OPKIND_ARG: u8 = 5;
+const OPKIND_GLOBAL: u8 = 6;
 const OPKIND_UNIMPLEMENTED: u8 = 255;
 
 #[deku_derive(DekuRead)]
@@ -283,6 +297,8 @@ pub(crate) enum Operand {
     Block(BlockOperand),
     #[deku(id = "OPKIND_ARG")]
     Arg(ArgOperand),
+    #[deku(id = "OPKIND_GLOBAL")]
+    Global(GlobalOperand),
     #[deku(id = "OPKIND_UNIMPLEMENTED")]
     Unimplemented(#[deku(until = "|v: &u8| *v == 0", map = "deserialise_string")] String),
 }
@@ -324,6 +340,7 @@ impl IRDisplay for Operand {
             Self::Type(t) => m.types[t.type_idx].to_str(m),
             Self::Function(f) => m.funcs[f.func_idx].name.to_owned(),
             Self::Block(bb) => bb.to_str(m),
+            Self::Global(g) => g.to_str(m),
             Self::Arg(a) => a.to_str(m),
             Self::Unimplemented(s) => format!("?op<{}>", s),
         }
@@ -382,8 +399,8 @@ impl Instruction {
         self.opcode == Opcode::Store
     }
 
-    pub(crate) fn is_gep(&self) -> bool {
-        self.opcode == Opcode::GetElementPtr
+    pub(crate) fn is_ptr_add(&self) -> bool {
+        self.opcode == Opcode::PtrAdd
     }
 
     pub(crate) fn is_control_point(&self, aot_mod: &Module) -> bool {
@@ -1030,7 +1047,7 @@ mod tests {
         // type_idx:
         write_native_usize(&mut data, 2);
         // opcode:
-        data.write_u8(Opcode::GetElementPtr as u8).unwrap();
+        data.write_u8(Opcode::PtrAdd as u8).unwrap();
         // num_operands:
         data.write_u32::<NativeEndian>(1).unwrap();
         // OPERAND 0
