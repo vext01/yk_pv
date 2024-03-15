@@ -17,6 +17,7 @@ use std::slice;
 use std::{
     collections::HashMap,
     env,
+    error::Error,
     ffi::{c_char, c_int, c_void},
     fmt, ptr,
     sync::{Arc, LazyLock, Weak},
@@ -154,6 +155,11 @@ impl CompiledTrace for LLVMCompiledTrace {
     fn hl(&self) -> &Weak<Mutex<HotLocation>> {
         &self.hl
     }
+
+    #[cfg(any(debug_assertions, test))]
+    fn disassemble(&self) -> Result<String, Box<dyn Error>> {
+        todo!()
+    }
 }
 
 #[cfg(not(test))]
@@ -224,6 +230,10 @@ impl CompiledTrace for LLVMCompiledTrace {
     }
 
     fn hl(&self) -> &Weak<Mutex<HotLocation>> {
+        todo!();
+    }
+
+    fn disassemble(&self) -> Result<String, Box<dyn Error>> {
         todo!();
     }
 }
