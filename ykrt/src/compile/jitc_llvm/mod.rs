@@ -10,6 +10,8 @@ use crate::{
 };
 use object::{Object, ObjectSection};
 use parking_lot::Mutex;
+#[cfg(any(debug_assertions, test))]
+use std::error::Error;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 #[cfg(not(test))]
@@ -17,7 +19,6 @@ use std::slice;
 use std::{
     collections::HashMap,
     env,
-    error::Error,
     ffi::{c_char, c_int, c_void},
     fmt, ptr,
     sync::{Arc, LazyLock, Weak},
