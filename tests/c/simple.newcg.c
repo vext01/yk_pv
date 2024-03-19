@@ -1,6 +1,7 @@
 // # Currently this test breaks CI entirely, so we temporarily ignore it
 // # completely.
 // ignore-if: test $YK_JIT_COMPILER != "yk"
+// ignore-if: test "$YKB_TRACER" != "hwt"
 // Run-time:
 //   env-var: YKD_PRINT_IR=aot,jit-pre-opt
 //   env-var: YKD_SERIALISE_COMPILATION=1
