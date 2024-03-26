@@ -300,13 +300,21 @@ impl<'a> X64CodeGen<'a> {
 
     /// Load a constant into the specified register.
     fn load_const(&mut self, reg: Rq, cidx: jit_ir::ConstIdx) {
-        match self.jit_mod.const_(cidx) {
-            jit_ir::Constant::U32(v) => {
-                dynasm!(self.asm; mov Rq(reg.code()), DWORD *v as i32)
+        let cst = self.jit_mod.const_(cidx);
+        let mut bytes = cst.bytes().as_slice();
+        let size = cst.type_idx().type_(self.jit_mod).byte_size().unwrap();
+        debug_assert_eq!(bytes.len(), size);
+        use byteorder::{NativeEndian, ReadBytesExt};
+        match size {
+            8 => {
+                let val = bytes.read_i64::<NativeEndian>().unwrap();
+                dynasm!(self.asm; mov Rq(reg.code()), QWORD val);
             }
-            jit_ir::Constant::Usize(_) => {
-                todo!()
+            4 => {
+                let val = bytes.read_i32::<NativeEndian>().unwrap();
+                dynasm!(self.asm; mov Rq(reg.code()), DWORD val);
             }
+            _ => todo!("{}", size),
         };
     }
 

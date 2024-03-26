@@ -8,6 +8,8 @@
 
 use super::aot_ir;
 use crate::compile::CompilationError;
+use byteorder::{NativeEndian, WriteBytesExt};
+use num_traits::{cast::NumCast, Signed};
 use std::{
     error::Error,
     ffi::{c_void, CStr, CString},
@@ -16,10 +18,87 @@ use std::{
 use typed_index_collections::TiVec;
 use ykaddr::addr::symbol_vaddr;
 
-// Since the AOT versions of these data structures contain no AOT/JIT-IR-specific indices we can
-// share them. Note though, that their corresponding index types are not shared.
-pub(crate) use super::aot_ir::IntegerType;
+// This is simple and can be shared across both IRs.
 pub(crate) use super::aot_ir::Predicate;
+
+/// A fixed-width integer type.
+///
+/// Signedness is not specified. Interpretation of the bit pattern is delegated to operations upon
+/// the integer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IntegerType {
+    num_bits: u32,
+}
+
+impl IntegerType {
+    /// Return the size of the integer type in bits.
+    pub(crate) fn num_bits(&self) -> u32 {
+        self.num_bits
+    }
+
+    /// Return the number of bytes required to store this integer type.
+    ///
+    /// Padding for alignment is not included.
+    pub(crate) fn byte_size(&self) -> usize {
+        let bits = self.num_bits();
+        let mut ret = bits / 8;
+        // If it wasn't an exactly byte-sized thing, round up to the next byte.
+        if bits % 8 != 0 {
+            ret += 1;
+        }
+        usize::try_from(ret).unwrap()
+    }
+
+    /// Create a new integer type with the specified number of bits.
+    pub(crate) fn new(num_bits: u32) -> Self {
+        Self { num_bits }
+    }
+
+    /// Compute the bytes required to store the value `val` for the constant integer type described
+    /// by `self`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `val` doesn't fit into the type described by `self`.
+    fn constant_bytes<T: NumCast + Signed + Sized>(&self, val: T) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let nbytes = self.byte_size();
+        // The write_* unwraps can only fail if we run out of memory.
+        match nbytes {
+            1 => bytes
+                .write_i8(<i8 as NumCast>::from::<T>(val).unwrap())
+                .unwrap(),
+            2 => bytes
+                .write_i16::<NativeEndian>(<i16 as NumCast>::from::<T>(val).unwrap())
+                .unwrap(),
+            4 => bytes
+                .write_i32::<NativeEndian>(<i32 as NumCast>::from::<T>(val).unwrap())
+                .unwrap(),
+            8 => bytes
+                .write_i64::<NativeEndian>(<i64 as NumCast>::from::<T>(val).unwrap())
+                .unwrap(),
+            _ => todo!(),
+        }
+        bytes
+    }
+
+    /// Instantiate a constant of value `val` and of the type described by `self`.
+    pub(crate) fn make_constant<T: NumCast + Signed + Sized>(
+        &self,
+        m: &mut Module,
+        val: T,
+    ) -> Result<Constant, CompilationError> {
+        let typ = Type::Integer(self.clone());
+        let type_idx = m.type_idx(&typ)?;
+        let bytes = IntegerType::constant_bytes(self, val);
+        Ok(Constant::new(type_idx, bytes))
+    }
+
+    /// Format a constant integer value that is of the type described by `self`.
+    fn const_to_str(&self, c: &Constant) -> String {
+        aot_ir::const_int_bytes_to_str(self.num_bits, c.bytes())
+    }
+}
 
 impl JitIRDisplay for IntegerType {
     fn to_string_impl<'a>(
@@ -325,6 +404,13 @@ index_16bit!(ExtraArgsIdx);
 pub(crate) struct ConstIdx(u16);
 index_16bit!(ConstIdx);
 
+impl ConstIdx {
+    /// Return a reference to the [Constant] for this index in the [Module] `m`.
+    pub(crate) fn const_<'a>(&self, m: &'a Module) -> &'a Constant {
+        m.const_(*self)
+    }
+}
+
 /// A guard info index.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct GuardInfoIdx(pub(crate) u16);
@@ -568,13 +654,14 @@ impl Operand {
     /// Returns the size of the operand in bytes.
     ///
     /// Assumes no padding is required for alignment.
+    ///
+    /// # Panics
+    ///
+    /// Panics if asking for the size make no sense for this operand.
     pub(crate) fn byte_size(&self, m: &Module) -> usize {
         match self {
             Self::Local(l) => l.instr(m).def_byte_size(m),
-            Self::Const(c) => match m.consts[*c] {
-                Constant::U32(_) => std::mem::size_of::<u32>(),
-                Constant::Usize(_) => std::mem::size_of::<usize>(),
-            },
+            Self::Const(cidx) => cidx.const_(m).type_idx().type_(m).byte_size().unwrap(),
         }
     }
 
@@ -592,7 +679,7 @@ impl Operand {
                     }
                 }
             }
-            _ => todo!(),
+            Self::Const(cidx) => cidx.const_(m).type_idx().type_(m),
         }
     }
 
@@ -620,27 +707,42 @@ impl JitIRDisplay for Operand {
     }
 }
 
-// FIXME: this isn't the correct representation of a constant.
-// It should be a bag of bytes and a type.
-//
-// FIXME: Why are the variants `U*` not `I*` like everywhere else? Our integer IR types has no
-// notion of signedness -- it's all up to interpretation of the bits by an operation.
+/// A constant value.
+///
+/// A constant value is represented as a type index and a "bag of bytes". The type index
+/// determines the interpretation of the byte bag.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Constant {
-    U32(u32),
-    Usize(usize),
+pub(crate) struct Constant {
+    /// The type index of the constant value.
+    type_idx: TypeIdx,
+    /// The bytes of the constant value.
+    bytes: Vec<u8>,
+}
+
+impl Constant {
+    pub(crate) fn new(type_idx: TypeIdx, bytes: Vec<u8>) -> Self {
+        Self { type_idx, bytes }
+    }
+
+    pub(crate) fn type_idx(&self) -> TypeIdx {
+        self.type_idx
+    }
+
+    pub(crate) fn bytes(&self) -> &Vec<u8> {
+        &self.bytes
+    }
 }
 
 impl JitIRDisplay for Constant {
     fn to_string_impl<'a>(
         &self,
-        _m: &Module,
+        m: &Module,
         s: &mut String,
         _nums: &LocalNumbers<'a>,
     ) -> Result<(), Box<dyn Error>> {
-        match self {
-            Self::U32(v) => s.push_str(&v.to_string()),
-            Self::Usize(v) => s.push_str(&v.to_string()),
+        match self.type_idx().type_(m) {
+            Type::Integer(it) => s.push_str(&it.const_to_str(self)),
+            _ => todo!(),
         }
         Ok(())
     }
@@ -1058,7 +1160,7 @@ impl CallInstruction {
                 panic!();
             }
         } else {
-            jit_mod.extra_args[usize::from(self.extra.0) + idx - 1].clone()
+            jit_mod.extra_args[<usize as From<u16>>::from(self.extra.0) + idx - 1].clone()
         }
     }
 }
@@ -1930,10 +2032,25 @@ mod tests {
     }
 
     #[test]
-    fn stringify_consts() {
-        let m = Module::new("test".into());
-        assert_eq!(Constant::U32(123).to_string(&m).unwrap(), "123");
-        assert_eq!(Constant::Usize(123).to_string(&m).unwrap(), "123");
+    fn stringify_int_consts() {
+        fn check<T: NumCast + Sized + Signed>(m: &mut Module, num_bits: u32, val: T, expect: &str) {
+            assert!(mem::size_of::<T>() * 8 >= usize::try_from(num_bits).unwrap());
+            let c = IntegerType::new(num_bits).make_constant(m, val).unwrap();
+            assert_eq!(c.to_string(&m).unwrap(), expect);
+        }
+
+        let mut m = Module::new("test".into());
+
+        check(&mut m, 8, 0i8, "0i8");
+        check(&mut m, 8, 111i8, "111i8");
+        check(&mut m, 8, 127i8, "127i8");
+        check(&mut m, 8, -128i8, "-128i8");
+        check(&mut m, 8, -1i8, "-1i8");
+        check(&mut m, 16, 123i16, "123i16");
+        check(&mut m, 32, 123i32, "123i32");
+        check(&mut m, 64, 456i64, "456i64");
+        check(&mut m, 64, u64::MAX as i64, "-1i64");
+        check(&mut m, 64, i64::MAX, "9223372036854775807i64");
     }
 
     #[test]
@@ -1969,5 +2086,19 @@ mod tests {
         ]
         .join("\n");
         assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn integer_type_sizes() {
+        assert_eq!(IntegerType::new(0).byte_size(), 0);
+        for i in 1..8 {
+            assert_eq!(IntegerType::new(i).byte_size(), 1);
+        }
+        for i in 9..16 {
+            assert_eq!(IntegerType::new(i).byte_size(), 2);
+        }
+        assert_eq!(IntegerType::new(127).byte_size(), 16);
+        assert_eq!(IntegerType::new(128).byte_size(), 16);
+        assert_eq!(IntegerType::new(129).byte_size(), 17);
     }
 }
