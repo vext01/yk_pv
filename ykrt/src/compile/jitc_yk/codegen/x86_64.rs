@@ -16,6 +16,7 @@ use super::{
 #[cfg(any(debug_assertions, test))]
 use crate::compile::jitc_yk::jit_ir::JitIRDisplay;
 use crate::compile::CompiledTrace;
+use byteorder::{NativeEndian, ReadBytesExt};
 use dynasmrt::{
     components::StaticLabel, dynasm, x64::Rq, AssemblyOffset, DynasmApi, DynasmError,
     DynasmLabelApi, ExecutableBuffer, Register,
@@ -304,7 +305,6 @@ impl<'a> X64CodeGen<'a> {
         let mut bytes = cst.bytes().as_slice();
         let size = cst.type_idx().type_(self.jit_mod).byte_size().unwrap();
         debug_assert_eq!(bytes.len(), size);
-        use byteorder::{NativeEndian, ReadBytesExt};
         match size {
             8 => {
                 let val = bytes.read_i64::<NativeEndian>().unwrap();
