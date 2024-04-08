@@ -282,20 +282,6 @@ pub(crate) enum Operand {
     Constant(ConstIdx),
     #[deku(id = "OPKIND_LOCAL_VARIABLE")]
     LocalVariable(InstructionID),
-    #[deku(id = "OPKIND_TYPE")]
-    Type(TypeIdx),
-    #[deku(id = "OPKIND_FUNC")]
-    Func(FuncIdx),
-    #[deku(id = "OPKIND_BLOCK")]
-    BBlock(BBlockIdx),
-    #[deku(id = "OPKIND_ARG")]
-    Arg(ArgIdx),
-    #[deku(id = "OPKIND_GLOBAL")]
-    Global(GlobalDeclIdx),
-    #[deku(id = "OPKIND_PREDICATE")]
-    Predicate(Predicate),
-    #[deku(id = "OPKIND_UNIMPLEMENTED")]
-    Unimplemented(#[deku(until = "|v: &u8| *v == 0", map = "map_to_string")] String),
 }
 
 impl Operand {
@@ -354,31 +340,46 @@ impl AotIRDisplay for Operand {
 }
 
 /// An instruction.
-///
-/// An instruction is conceptually an [Opcode] and a list of [Operand]s. The semantics of the
-/// instruction, and the meaning of the operands, are determined by the opcode.
-///
-/// Instructions that compute a value define a new local variable in the parent [Func]. In such a
-/// case the newly defined variable can be referenced in the operands of later instructions by the
-/// [InstructionID] of the [Instruction] that defined the variable.
-///
-/// In other words, an instruction and the variable it defines are both identified by the same
-/// [InstructionID].
-///
-/// The type of the variable defined by an instruction (if any) can be determined by
-/// [Instruction::def_type()].
-#[deku_derive(DekuRead)]
-#[derive(Debug)]
-pub(crate) struct Instruction {
-    type_idx: TypeIdx,
-    opcode: Opcode,
-    #[deku(temp)]
-    num_operands: u32,
-    #[deku(count = "num_operands")]
-    operands: Vec<Operand>,
-    /// A variable name, only computed if the instruction is ever printed.
-    #[deku(skip)]
-    name: RefCell<Option<String>>,
+/// FIXME: tell deku
+enum Instruction {
+    Nop,
+    Load(Operand), // instructions with one (or maybe two) fields can be tuple-like?
+    Store {
+        what: Operand,
+        where_: Operand,
+    }, // more involved instrs can be struct-like with named fields?
+    Alloca(TypeIdx),
+    Call {
+        target: FuncDecl,
+        first_arg: Operand,
+        extra_args: ExtraArgIdx,
+    },
+    Br(BBlockIdx),
+    // ... give all the other opcodes below the same treatment.
+    // CondBr,
+    // Icmp,
+    // BinaryOperator,
+    // Ret,
+    // InsertValue,
+    // PtrAdd,
+    // Add,
+    // Sub,
+    // Mul,
+    // Or,
+    // And,
+    // Xor,
+    // Shl,
+    // AShr,
+    // FAdd,
+    // FDiv,
+    // FMul,
+    // FRem,
+    // FSub,
+    // LShr,
+    // SDiv,
+    // SRem,
+    // UDiv,
+    // URem,
 }
 
 impl Instruction {

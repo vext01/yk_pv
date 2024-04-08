@@ -172,29 +172,36 @@ impl<'a> TraceBuilder<'a> {
 
         // Decide how to translate each AOT instruction based upon its opcode.
         for (inst_idx, inst) in blk.instrs.iter().enumerate() {
-            match inst.opcode() {
-                aot_ir::Opcode::Br => Ok(()),
-                aot_ir::Opcode::Load => self.handle_load(inst, &bid, inst_idx),
-                // FIXME: ignore remaining instructions after a call.
-                aot_ir::Opcode::Call => self.handle_call(inst, &bid, inst_idx),
-                aot_ir::Opcode::Store => self.handle_store(inst, &bid, inst_idx),
-                aot_ir::Opcode::PtrAdd => {
-                    if self.cp_block.as_ref() == Some(&bid) && inst_idx == self.first_ti_idx {
-                        // We've reached the trace inputs part of the control point block. There's
-                        // no point in copying these instructions over and we can just skip to the
-                        // next block.
-                        return Ok(());
-                    }
-                    self.handle_ptradd(inst, &bid, inst_idx)
+            match inst {
+                // ^^^ this is now a match over the structure of the instr itself.
+                aot_ir::Opcode::Br(bbidx) => self.handle_br(bbidx),
+                aot_ir::Opcode::Load(op) => self.handle_load(inst, &bid, inst_idx, op),
+                aot_ir::Opcode::Call {
+                    target,
+                    arg0,
+                    extra_args,
+                } => self.handle_call(inst, &bid, inst_idx, target, arg0, extra_args),
+                aot_ir::Opcode::Store { what, where_ } => {
+                    self.handle_store(inst, &bid, inst_idx, what, where_)
                 }
-                aot_ir::Opcode::Add => self.handle_binop(inst, &bid, inst_idx),
-                aot_ir::Opcode::Icmp => self.handle_icmp(inst, &bid, inst_idx),
-                aot_ir::Opcode::CondBr => {
-                    let sm = &blk.instrs[InstrIdx::new(inst_idx - 1)];
-                    debug_assert!(sm.is_stackmap_call(self.aot_mod));
-                    self.handle_condbr(inst, sm, nextbb.as_ref().unwrap())
-                }
-                aot_ir::Opcode::Ret => self.handle_ret(inst, &bid, inst_idx),
+                // etc.
+                // aot_ir::Opcode::PtrAdd => {
+                //     if self.cp_block.as_ref() == Some(&bid) && inst_idx == self.first_ti_idx {
+                //         // We've reached the trace inputs part of the control point block. There's
+                //         // no point in copying these instructions over and we can just skip to the
+                //         // next block.
+                //         return Ok(());
+                //     }
+                //     self.handle_ptradd(inst, &bid, inst_idx)
+                // }
+                // aot_ir::Opcode::Add => self.handle_binop(inst, &bid, inst_idx),
+                // aot_ir::Opcode::Icmp => self.handle_icmp(inst, &bid, inst_idx),
+                // aot_ir::Opcode::CondBr => {
+                //     let sm = &blk.instrs[InstrIdx::new(inst_idx - 1)];
+                //     debug_assert!(sm.is_stackmap_call(self.aot_mod));
+                //     self.handle_condbr(inst, sm, nextbb.as_ref().unwrap())
+                // }
+                // aot_ir::Opcode::Ret => self.handle_ret(inst, &bid, inst_idx),
                 _ => todo!("{:?}", inst),
             }?;
         }
