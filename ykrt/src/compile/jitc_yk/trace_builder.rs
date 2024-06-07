@@ -529,14 +529,7 @@ impl<'a> TraceBuilder<'a> {
                     }
                     _ => panic!(), // IR malformed.
                 };
-                match op {
-                    jit_ir::Operand::Local(lidx) => {
-                        live_args.push(*lidx);
-                    }
-                    jit_ir::Operand::Const(_) => {
-                        todo!()
-                    }
-                }
+                live_args.push(op.to_owned());
             }
         }
 

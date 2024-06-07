@@ -60,6 +60,14 @@ const SYSV_CALL_STACK_ALIGN: usize = 16;
 /// On X86_64 the stack grows down.
 const STACK_DIRECTION: StackDirection = StackDirection::GrowsDown;
 
+#[derive(Debug)]
+pub(crate) enum LiveLoc {
+    /// Allocated by the register allocator.
+    Alloc(LocalAlloc),
+    /// A constant materialised by the tracebuilder.
+    Const(jit_ir::ConstIdx),
+}
+
 /// A function that we can put a debugger breakpoint on.
 /// FIXME: gross hack.
 #[cfg(debug_assertions)]
@@ -785,10 +793,13 @@ impl<'a> X64CodeGen<'a> {
         debug_assert_eq!(cond.byte_size(self.m), 1);
 
         // Convert the guard info into deopt info and store it on the heap.
-        let mut locs: Vec<LocalAlloc> = Vec::new();
+        let mut locs = Vec::new();
         let gi = inst.guard_info(self.m);
-        for lidx in gi.lives() {
-            locs.push(*self.ra.allocation(*lidx));
+        for l in gi.lives() {
+            match l {
+                Operand::Local(lidx) => locs.push(LiveLoc::Alloc(*self.ra.allocation(*lidx))),
+                Operand::Const(cidx) => locs.push(LiveLoc::Const(*cidx)),
+            }
         }
 
         // FIXME: Move `frames` instead of copying them (requires JIT module to be consumable).
@@ -894,7 +905,7 @@ struct DeoptInfo {
     /// Vector of AOT stackmap IDs.
     frames: Vec<u64>,
     // Vector of live JIT variable locations.
-    lives: Vec<LocalAlloc>,
+    lives: Vec<LiveLoc>,
 }
 
 #[derive(Debug)]

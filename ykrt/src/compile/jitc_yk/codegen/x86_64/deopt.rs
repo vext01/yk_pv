@@ -6,7 +6,7 @@ use libc::c_void;
 use std::ptr;
 use yksmp::Location as SMLocation;
 
-use super::{X64CompiledTrace, RBP_DWARF_NUM, REG64_SIZE};
+use super::{LiveLoc, X64CompiledTrace, RBP_DWARF_NUM, REG64_SIZE};
 
 #[no_mangle]
 pub(crate) extern "C" fn __yk_deopt(
@@ -103,17 +103,20 @@ pub(crate) extern "C" fn __yk_deopt(
         for aotvar in rec.live_vars.iter() {
             // Read live JIT values from the trace's stack frame.
             let jitval = match info.lives[varidx] {
-                LocalAlloc::Stack { frame_off, size } => {
-                    let p = unsafe { jitrbp.byte_sub(frame_off) };
-                    match size {
-                        1 => unsafe { u64::from(std::ptr::read::<u8>(p as *const u8)) },
-                        2 => unsafe { u64::from(std::ptr::read::<u16>(p as *const u16)) },
-                        4 => unsafe { u64::from(std::ptr::read::<u32>(p as *const u32)) },
-                        8 => unsafe { std::ptr::read::<u64>(p as *const u64) },
-                        _ => todo!(),
+                LiveLoc::Alloc(alloc) => match alloc {
+                    LocalAlloc::Stack { frame_off, size } => {
+                        let p = unsafe { jitrbp.byte_sub(frame_off) };
+                        match size {
+                            1 => unsafe { u64::from(std::ptr::read::<u8>(p as *const u8)) },
+                            2 => unsafe { u64::from(std::ptr::read::<u16>(p as *const u16)) },
+                            4 => unsafe { u64::from(std::ptr::read::<u32>(p as *const u32)) },
+                            8 => unsafe { std::ptr::read::<u64>(p as *const u64) },
+                            _ => todo!(),
+                        }
                     }
-                }
-                LocalAlloc::Register => todo!(),
+                    LocalAlloc::Register => todo!(),
+                },
+                LiveLoc::Const(_) => todo!(),
             };
             varidx += 1;
 

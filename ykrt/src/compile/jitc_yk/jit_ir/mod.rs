@@ -945,12 +945,15 @@ impl fmt::Display for Const {
 pub(crate) struct GuardInfo {
     /// Stackmap IDs for the active call frames.
     frames: Vec<u64>,
-    /// Indices of live JIT variables.
-    lives: Vec<InstIdx>,
+    /// The live operands.
+    ///
+    /// These are a collection of `Operand` because something that was a live variable in the AOT
+    /// IR could become a constant in the JIT IR (due to, e.g. inlining).
+    lives: Vec<Operand>,
 }
 
 impl GuardInfo {
-    pub(crate) fn new(frames: Vec<u64>, lives: Vec<InstIdx>) -> Self {
+    pub(crate) fn new(frames: Vec<u64>, lives: Vec<Operand>) -> Self {
         Self { frames, lives }
     }
 
@@ -958,7 +961,7 @@ impl GuardInfo {
         &self.frames
     }
 
-    pub(crate) fn lives(&self) -> &Vec<InstIdx> {
+    pub(crate) fn lives(&self) -> &Vec<Operand> {
         &self.lives
     }
 }
