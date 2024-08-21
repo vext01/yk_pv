@@ -1183,6 +1183,24 @@ impl<'a> Assemble<'a> {
                                     ),
                                     _ => todo!(),
                                 },
+                                VarLocation::Register(reg_alloc::Register::FP(reg)) => match size {
+                                    4 => dynasm!(self.asm
+                                        ; push rbp
+                                        ; mov rbp, [rbp]
+                                        ; movss [rbp + frame_off], Rx(reg.code())
+                                        ; pop rbp
+                                    ),
+                                    _ => todo!(),
+                                },
+                                VarLocation::ConstInt { bits, v } => match bits {
+                                    32 => dynasm!(self.asm;
+                                        push rbp;
+                                        mov rbp, [rbp];
+                                        mov DWORD [rbp + frame_off], v as i32;
+                                        pop rbp
+                                    ),
+                                    _ => todo!(),
+                                },
                                 VarLocation::Stack {
                                     frame_off: off,
                                     size,
@@ -1196,9 +1214,18 @@ impl<'a> Assemble<'a> {
                                         pop rbp;
                                         pop rax
                                     ),
+                                    4 => dynasm!(self.asm;
+                                        push rax;
+                                        mov eax, DWORD [rbp - i32::try_from(off).unwrap()];
+                                        push rbp;
+                                        mov rbp, [rbp];
+                                        mov DWORD [rbp + frame_off], eax;
+                                        pop rbp;
+                                        pop rax
+                                    ),
                                     _ => todo!(),
                                 },
-                                _ => todo!(),
+                                e => todo!("{:?}", e),
                             }
                         }
                         VarLocation::Register(reg) => {
@@ -1467,7 +1494,14 @@ impl<'a> Assemble<'a> {
                             };
                             lives.push((iid.clone(), VarLocation::ConstInt { bits: *bits, v: *c }))
                         }
-                        _ => todo!(),
+                        Const::Ptr(p) => lives.push((
+                            iid.clone(),
+                            VarLocation::ConstInt {
+                                bits: 64,
+                                v: u64::try_from(*p).unwrap(),
+                            },
+                        )),
+                        e => todo!("{:?}", e),
                     }
                 }
             }

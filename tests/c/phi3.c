@@ -1,3 +1,4 @@
+// ## yk-config-env: YKB_AOT_OPTLEVEL=1
 // Run-time:
 //   env-var: YKD_LOG_IR=-:aot,jit-pre-opt
 //   env-var: YK_LOG=4
@@ -12,7 +13,7 @@
 //     ...
 //     %{{15_2}}: i32 = call g() ...
 //     ...
-//     %{{_}}: i32 = phi bb{{_}} -> %{{15_2}}, bb{{_}} -> %{{13_2}}
+//     %{{_}}: i32 = phi bb{{_}} -> %{{13_2}}, bb{{_}} -> %{{15_2}}
 //     ...
 //     --- End aot ---
 //     --- Begin jit-pre-opt ---

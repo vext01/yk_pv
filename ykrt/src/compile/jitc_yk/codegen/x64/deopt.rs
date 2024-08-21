@@ -112,7 +112,7 @@ pub(crate) extern "C" fn __yk_deopt(
     let mut lastframesize = 0;
 
     // Live register values that we need to write back into AOT registers.
-    let mut registers = [0; 16];
+    let mut registers = [0; 128];
     let mut varidx = 0;
     for (i, iframe) in info.inlined_frames.iter().enumerate() {
         let (rec, pinfo) = aot_smaps.get(usize::try_from(iframe.safepoint.id).unwrap());
@@ -184,15 +184,27 @@ pub(crate) extern "C" fn __yk_deopt(
                     varidx += 1;
                     continue;
                 }
-                VarLocation::Indirect { frame_off, size } => {
-                    assert_eq!(size, 8);
-                    unsafe {
+                VarLocation::Indirect { frame_off, size } => match size {
+                    8 => unsafe {
                         (jitrbp as *const *const u64)
                             .read()
                             .byte_offset(isize::try_from(frame_off).unwrap())
                             .read()
-                    }
-                }
+                    },
+                    4 => unsafe {
+                        (jitrbp as *const *const u32)
+                            .read()
+                            .byte_offset(isize::try_from(frame_off).unwrap())
+                            .read() as u64
+                    },
+                    1 => unsafe {
+                        (jitrbp as *const *const u8)
+                            .read()
+                            .byte_offset(isize::try_from(frame_off).unwrap())
+                            .read() as u64
+                    },
+                    _ => todo!("size={}", size),
+                },
             };
             varidx += 1;
 
@@ -209,17 +221,17 @@ pub(crate) extern "C" fn __yk_deopt(
                         // this value to.
                         registers[usize::from(*extra - 1)] = jitval;
                     }
-                    if i == 0 {
-                        // skip first frame
-                        continue;
-                    }
                     // Check if there's an additional spill location for this value. Negative
                     // values indicate stack offsets, positive values are registers. Lastly, 0
                     // indicates that there's no additional location. Note, that this means
                     // that in order to encode register locations (where RAX = 0), all register
                     // values have been offset by 1.
                     if *off < 0 {
-                        let temp = unsafe { rbp.offset(isize::try_from(*off).unwrap()) };
+                        let temp = if i == 0 {
+                            unsafe { frameaddr.offset(isize::try_from(*off).unwrap()) }
+                        } else {
+                            unsafe { rbp.offset(isize::try_from(*off).unwrap()) }
+                        };
                         debug_assert!(*off < i32::try_from(rec.size).unwrap());
                         unsafe { ptr::write::<u64>(temp as *mut u64, jitval) };
                     } else if *off > 0 {
