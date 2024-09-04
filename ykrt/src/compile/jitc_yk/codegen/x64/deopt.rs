@@ -14,6 +14,12 @@ use yksmp::Location as SMLocation;
 
 use super::{X64CompiledTrace, RBP_DWARF_NUM, REG64_SIZE};
 
+// Registers we want to restore during deopt.
+const RECOVER_REG: [usize; 31] = [
+    0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+    28, 29, 30, 31, 32,
+];
+
 /// Deoptimise back to the interpreter. This function is called from a failing guard (see
 /// `x86_64/mod.rs`). The arguments are: `frameaddr` is the RBP value for the caller of the JIT
 /// function frame; `gidx` the ID of the failing guard; `jitrbp` is the JIT function frame's RBP;
@@ -86,7 +92,7 @@ pub(crate) extern "C" fn __yk_deopt(
 
     // Calculate space required for the new stack.
     // Add space for live register values which we'll be adding at the end.
-    let mut memsize = 15 * REG64_SIZE;
+    let mut memsize = RECOVER_REG.len() * REG64_SIZE;
     // Calculate amount of space we need to allocate for each stack frame.
     for (i, iframe) in info.inlined_frames.iter().enumerate() {
         let (rec, _) = aot_smaps.get(usize::try_from(iframe.safepoint.id).unwrap());
@@ -112,7 +118,7 @@ pub(crate) extern "C" fn __yk_deopt(
     let mut lastframesize = 0;
 
     // Live register values that we need to write back into AOT registers.
-    let mut registers = [0; 128];
+    let mut registers = [0; RECOVER_REG.len() + 2]; // +2 cause there's two missing
     let mut varidx = 0;
     for (i, iframe) in info.inlined_frames.iter().enumerate() {
         let (rec, pinfo) = aot_smaps.get(usize::try_from(iframe.safepoint.id).unwrap());
@@ -294,7 +300,7 @@ pub(crate) extern "C" fn __yk_deopt(
 
     // Write the live registers into the new stack. We put these at the very end of the new stack
     // so that they can be immediately popped after we memcpy'd the new stack over.
-    for reg in [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15] {
+    for reg in RECOVER_REG {
         unsafe {
             rsp = rsp.byte_sub(REG64_SIZE);
             ptr::write(rsp as *mut u64, registers[reg]);
@@ -340,6 +346,38 @@ unsafe extern "C" fn __replace_stack(dst: *mut c_void, src: *const c_void, size:
         // Free the source which is no longer needed.
         "call free",
         // Recover live registers.
+        "movsd xmm15, [rsp]",
+        "add rsp, 8",
+        "movsd xmm14, [rsp]",
+        "add rsp, 8",
+        "movsd xmm13, [rsp]",
+        "add rsp, 8",
+        "movsd xmm12, [rsp]",
+        "add rsp, 8",
+        "movsd xmm11, [rsp]",
+        "add rsp, 8",
+        "movsd xmm10, [rsp]",
+        "add rsp, 8",
+        "movsd xmm9, [rsp]",
+        "add rsp, 8",
+        "movsd xmm8, [rsp]",
+        "add rsp, 8",
+        "movsd xmm7, [rsp]",
+        "add rsp, 8",
+        "movsd xmm6, [rsp]",
+        "add rsp, 8",
+        "movsd xmm5, [rsp]",
+        "add rsp, 8",
+        "movsd xmm4, [rsp]",
+        "add rsp, 8",
+        "movsd xmm3, [rsp]",
+        "add rsp, 8",
+        "movsd xmm2, [rsp]",
+        "add rsp, 8",
+        "movsd xmm1, [rsp]",
+        "add rsp, 8",
+        "movsd xmm0, [rsp]",
+        "add rsp, 8",
         "pop r15",
         "pop r14",
         "pop r13",
