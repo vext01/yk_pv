@@ -1197,7 +1197,13 @@ impl<'a> Assemble<'a> {
                                         ; movss [rbp + frame_off], Rx(reg.code())
                                         ; pop rbp
                                     ),
-                                    _ => todo!(),
+                                    8 => dynasm!(self.asm
+                                        ; push rbp
+                                        ; mov rbp, [rbp]
+                                        ; movsd [rbp + frame_off], Rx(reg.code())
+                                        ; pop rbp
+                                    ),
+                                    e => todo!("{}", e),
                                 },
                                 VarLocation::ConstInt { bits, v } => match bits {
                                     32 => dynasm!(self.asm;
