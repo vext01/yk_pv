@@ -45,7 +45,7 @@ impl Record {
 }
 
 /// Describes where live variables are stored at specific times during execution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Location {
     /// The live variable is stored in a register. Note, that LLVM's stackmap only stores one
     /// location per live variable, which is enough for reading them out. For deoptimisation

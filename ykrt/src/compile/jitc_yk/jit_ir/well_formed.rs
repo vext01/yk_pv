@@ -24,7 +24,9 @@
 //!   * [Const::Int]s cannot use more bits than the corresponding [Ty::Integer] type.
 //!   * [super::Inst] operands refer to values which have been previously defined.
 
-use super::{BinOp, BinOpInst, Const, GuardInst, Inst, Module, Operand, Ty};
+use super::{BinOp, BinOpInst, Const, GuardInst, Inst, InstIdx, Module, Operand, Ty};
+use std::collections::{hash_map, HashMap};
+use yksmp::Location;
 
 impl Module {
     pub(crate) fn assert_well_formed(&self) {
@@ -37,6 +39,9 @@ impl Module {
         }
 
         let mut last_inst = None;
+        // The set of locations we've seen trace inputs loaded from.
+        let mut seen_ti_locs: HashMap<&Location, (InstIdx, &Inst)> = HashMap::new();
+
         for (iidx, inst) in self.iter_skipping_insts() {
             inst.map_operand_locals(self, &mut |x| {
                 if let Inst::Tombstone = self.inst_raw(x) {
@@ -280,11 +285,29 @@ impl Module {
                             self.inst_no_copies(iidx).display(iidx, self));
                     }
                 }
-                Inst::LoadTraceInput(_) => {
+                Inst::LoadTraceInput(tii) => {
                     if let Some(i) = last_inst {
                         if !matches!(i, Inst::LoadTraceInput(_)) {
                             panic!("LoadTraceInput instruction may only appear at the beginning of a trace or after another LoadTraceInput instruction\n  {}",
                                 self.inst_no_copies(iidx).display(iidx, self));
+                        }
+                    }
+                    // Now check that no other load_ti instruction has already loaded from that
+                    // same location. There should be no such aliases.
+                    let loc = &self.tilocs[usize::try_from(tii.locidx()).unwrap()];
+                    if !matches!(loc, Location::Constant(_)) {
+                        match seen_ti_locs.entry(&loc) {
+                            hash_map::Entry::Occupied(o) => {
+                                let (other_iidx, other_inst) = o.get();
+                                panic!(
+                                    "load_ti instructions load from the same location:\n  {}\n  {}",
+                                    other_inst.display(*other_iidx, self),
+                                    inst.display(iidx, self)
+                                );
+                            }
+                            hash_map::Entry::Vacant(v) => {
+                                v.insert((iidx, inst));
+                            }
                         }
                     }
                 }
