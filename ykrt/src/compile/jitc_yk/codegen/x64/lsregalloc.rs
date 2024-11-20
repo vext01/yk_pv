@@ -1214,7 +1214,7 @@ enum RegState {
 
 /// Which registers in a set of 16 registers are currently used? Happily 16 bits is the right size
 /// for (separately) both x64's general purpose and floating point registers.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct RegSet<R>(u16, PhantomData<R>);
 
 impl<R: Register> RegSet<R> {
@@ -1233,6 +1233,18 @@ impl<R: Register> RegSet<R> {
 
     fn unset(&mut self, reg: R) {
         self.0 &= !(1 << u16::from(reg.code()));
+    }
+}
+
+impl<R: Register> std::fmt::Debug for RegSet<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut idxs = Vec::new();
+        for idx in 0..16 {
+            if self.0 & idx != 0 {
+                idxs.push(format!("{idx}"));
+            }
+        }
+        write!(f, "RegSet{}", idxs.join(","))
     }
 }
 
