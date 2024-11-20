@@ -125,7 +125,7 @@ impl Module {
                         }
                     }
                 }
-                Inst::Guard(GuardInst { cond, .. }) => {
+                Inst::Guard(gi @ GuardInst { cond, .. }) => {
                     let cond = cond.unpack(self);
                     let tyidx = cond.tyidx(self);
                     let Ty::Integer(1) = self.type_(tyidx) else {
@@ -134,6 +134,22 @@ impl Module {
                             self.inst_no_copies(iidx).display(iidx, self)
                         )
                     };
+                    // Check that each live variable appears at most once.
+                    //
+                    // If the same variable appears more than once, and the guard is side-traced,
+                    // then this would lead to distinct variables with the same storage location in
+                    // the side-trace and this would upset the register allocator, which assumes
+                    // this doesn't happen.
+                    use std::collections::HashSet;
+                    let mut seen_lvars = HashSet::new();
+                    for (_, o) in gi.guard_info(self).live_vars() {
+                        if let Operand::Var(oidx) = o.unpack(self) {
+                            if seen_lvars.contains(&oidx) {
+                                panic!("Guard at position {iidx} has a safepoint that passes the same live variable '%{}' multiple times:\n  {}", oidx, inst.display(iidx, self));
+                            }
+                            seen_lvars.insert(oidx);
+                        }
+                    }
                     if let Operand::Const(x) = cond {
                         let Const::Int(_, _v) = self.const_(x) else {
                             unreachable!()
@@ -286,6 +302,7 @@ impl Module {
                     }
                 }
                 Inst::LoadTraceInput(tii) => {
+                    // Check load_ti instructions appear first in the trace.
                     if let Some(i) = last_inst {
                         if !matches!(i, Inst::LoadTraceInput(_)) {
                             panic!("LoadTraceInput instruction may only appear at the beginning of a trace or after another LoadTraceInput instruction\n  {}",
@@ -690,4 +707,22 @@ mod tests {
             ",
         );
     }
+
+    // FIXME: test would look like this, but the below (valid, I believe) guard doesn't parse for
+    // some reason.
+    //
+    // #[test]
+    // #[should_panic(
+    //     expected = "xxx"
+    // )]
+    // fn guard_with_dup_lives() {
+    //     Module::from_str(
+    //         "
+    //           entry:
+    //             %0: i1 = load_ti 0
+    //             %1: i32 = load_ti 1
+    //             guard true, %0, [0:%0_0: %1, 0:%0_1: %1]
+    //         ",
+    //     );
+    // }
 }

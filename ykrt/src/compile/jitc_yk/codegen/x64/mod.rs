@@ -2690,12 +2690,18 @@ mod tests {
         }
     }
 
-    fn codegen_and_test(mod_str: &str, patt_lines: &str) {
+    fn codegen_and_test(mod_str: &str, patt_lines: &str, optimise: bool) {
         let m = Module::from_str(mod_str);
         let mt = MT::new().unwrap();
         let hl = HotLocation {
             kind: HotLocationKind::Tracing,
             tracecompilation_errors: 0,
+        };
+        let m = if optimise {
+            use crate::compile::jitc_yk::opt::opt;
+            opt(m).unwrap()
+        } else {
+            m
         };
         match_asm(
             Assemble::new(&m, None, None)
@@ -2723,6 +2729,7 @@ mod tests {
                 {{_}} {{_}}: mov r.64.x, [rbx]
                 ...
                 ",
+            false,
         );
     }
 
@@ -2740,6 +2747,7 @@ mod tests {
                 {{_}} {{_}}: movzx r.64.x, byte ptr [rbx]
                 ...
                 ",
+            false,
         );
     }
 
@@ -2757,6 +2765,7 @@ mod tests {
                 {{_}} {{_}}: mov r.32.x, [r.64.x]
                 ...
                 ",
+            false,
         );
     }
 
@@ -2775,6 +2784,7 @@ mod tests {
                 {{_}} {{_}}: mov [r.64.y], r.64.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -2792,6 +2802,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, 0x40
                 ...
                 ",
+            false,
         );
     }
 
@@ -2819,6 +2830,7 @@ mod tests {
                 {{_}} {{_}}: mov r.64._, [r.64.y]
                 ...
                 ",
+            false,
         );
     }
 
@@ -2846,6 +2858,7 @@ mod tests {
                 ; *%4 = 2i8
                 {{_}} {{_}}: mov byte ptr [r.64.x], 0x02
                 ",
+            false,
         );
     }
 
@@ -2864,6 +2877,7 @@ mod tests {
                 {{_}} {{_}}: lea r.64.x, [r.64._+r.64.x*1]
                 ...
                 ",
+            false,
         );
 
         codegen_and_test(
@@ -2879,6 +2893,7 @@ mod tests {
                 {{_}} {{_}}: lea r.64.x, [r.64._+r.64.x*2]
                 ...
                 ",
+            false,
         );
 
         codegen_and_test(
@@ -2894,6 +2909,7 @@ mod tests {
                 {{_}} {{_}}: lea r.64.x, [r.64._+r.64.x*4]
                 ...
                 ",
+            false,
         );
 
         codegen_and_test(
@@ -2910,6 +2926,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, r.64._
                 ...
                 ",
+            false,
         );
 
         codegen_and_test(
@@ -2926,6 +2943,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, r.64._
                 ...
                 ",
+            false,
         );
 
         codegen_and_test(
@@ -2942,6 +2960,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, r.64._
                 ...
                 ",
+            false,
         );
     }
 
@@ -2962,6 +2981,7 @@ mod tests {
                 {{_}} {{_}}: mov [r.64.x], r.64.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -2989,6 +3009,7 @@ mod tests {
                 {{_}} {{_}}: mov qword ptr [r.64.x], 0x04
                 ...
                 ",
+            false,
         );
     }
 
@@ -3007,6 +3028,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, r.64.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -3025,6 +3047,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, r.64.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -3042,6 +3065,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, 0x01
                 ...
                 ",
+            false,
         );
     }
 
@@ -3059,6 +3083,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, 0xffffffffffffffff
                 ...
                 ",
+            false,
         );
         // note: disassembler sign-extended the immediate when displaying it.
     }
@@ -3077,6 +3102,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.x, 0x7fffffff
                 ...
                 ",
+            false,
         );
     }
 
@@ -3095,6 +3121,7 @@ mod tests {
                 {{_}} {{_}}: add r.64.y, r.64.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -3112,6 +3139,7 @@ mod tests {
                 {{_}} {{_}}: add r.32.x, 0x01
                 ...
                 ",
+            false,
         );
     }
 
@@ -3129,6 +3157,7 @@ mod tests {
                 {{_}} {{_}}: add r.32.x, 0xffffffff
                 ...
                 ",
+            false,
         );
     }
 
@@ -3157,6 +3186,7 @@ mod tests {
                 {{_}} {{_}}: and r.64.e, r.64.f
                 ...
                 ",
+            false,
         );
     }
 
@@ -3188,6 +3218,7 @@ mod tests {
                 {{_}} {{_}}: sar r.64.e, 0x03
                 ...
                 ",
+            false,
         );
     }
 
@@ -3219,6 +3250,7 @@ mod tests {
                 {{_}} {{_}}: shr r.64.e, 0x03
                 ...
                 ",
+            false,
         );
     }
 
@@ -3250,6 +3282,7 @@ mod tests {
                 ......
                 {{_}} {{_}}: shl r.32.b, cl
                 ",
+            false,
         );
     }
 
@@ -3283,6 +3316,7 @@ mod tests {
                 {{_}} {{_}}: mul r.64.c
                 ...
                 ",
+            false,
         );
     }
 
@@ -3311,6 +3345,7 @@ mod tests {
                 {{_}} {{_}}: or r.64.e, r.64.f
                 ...
                 ",
+            false,
         );
     }
 
@@ -3351,6 +3386,7 @@ mod tests {
                 {{_}} {{_}}: idiv r.64.c
                 ...
                 ",
+            false,
         );
     }
 
@@ -3391,6 +3427,7 @@ mod tests {
                 {{_}} {{_}}: idiv r.64.c
                 ...
                 ",
+            false,
         );
     }
 
@@ -3427,6 +3464,7 @@ mod tests {
                 ; %9: i32 = sub 0i32, %7
                 {{_}} {{_}}: neg r.32.c
                 ",
+            false,
         );
     }
 
@@ -3455,6 +3493,7 @@ mod tests {
                 {{_}} {{_}}: xor r.64.e, r.64.f
                 ...
                 ",
+            false,
         );
     }
 
@@ -3495,6 +3534,7 @@ mod tests {
                 {{_}} {{_}}: div r.64.c
                 ...
                 ",
+            false,
         );
     }
 
@@ -3517,6 +3557,7 @@ mod tests {
                 ...
             "
             ),
+            false,
         );
     }
 
@@ -3545,6 +3586,7 @@ mod tests {
                 ...
             "
             ),
+            false,
         );
     }
 
@@ -3573,6 +3615,7 @@ mod tests {
                 ...
             "
             ),
+            false,
         );
     }
 
@@ -3586,6 +3629,7 @@ mod tests {
                 %1: i32 = call @f(0, 1, 2, 3, 4, 5, 6, 7)
             ",
             "",
+            false,
         );
     }
 
@@ -3604,6 +3648,7 @@ mod tests {
                 {{_}} {{_}}: call r.64.x
                 ...
             ",
+            false,
         );
     }
 
@@ -3647,6 +3692,7 @@ mod tests {
                 {{_}} {{_}}: setz r.8._
                 ...
             ",
+            false,
         );
     }
 
@@ -3672,6 +3718,7 @@ mod tests {
                 {{_}} {{_}}: shl r.64.c, 0x01
                 {{_}} {{_}}: sar r.64.c, 0x01
                 ",
+            false,
         );
     }
 
@@ -3697,6 +3744,7 @@ mod tests {
                 {{_}} {{_}}: shl r.64.c, 0x01
                 {{_}} {{_}}: shr r.64.c, 0x01
                 ",
+            false,
         );
     }
 
@@ -3717,6 +3765,7 @@ mod tests {
             ; %3: float = bitcast %1
             {{_}} {{_}}: cvtsi2ss fp.128.x, r.32.x
             ",
+            false,
         );
     }
 
@@ -3745,6 +3794,7 @@ mod tests {
                 ... mov rax, 0x...
                 ... call rax
             ",
+            false,
         );
     }
 
@@ -3773,6 +3823,7 @@ mod tests {
                 ... mov rax, 0x...
                 ... call rax
             ",
+            false,
         );
     }
 
@@ -3804,6 +3855,7 @@ mod tests {
                 ... mov rax, 0x...
                 ... call rax
             ",
+            false,
         );
     }
 
@@ -3824,6 +3876,7 @@ mod tests {
                 {{_}} {{_}}: setz r.8.x
                 ...
             ",
+            false,
         );
     }
 
@@ -3845,6 +3898,7 @@ mod tests {
                 {{_}} {{_}}: jnz 0x...
                 ...
             ",
+            false,
         );
     }
 
@@ -3859,6 +3913,7 @@ mod tests {
                 ...
                 {{_}} {{_}}: ud2
                 ",
+            false,
         );
     }
 
@@ -3878,6 +3933,7 @@ mod tests {
                 ; tloop_jump []:
                 {{_}} {{_}}: jmp {{target}}
             ",
+            false,
         );
     }
 
@@ -3902,6 +3958,7 @@ mod tests {
                 ...
                 ...: jmp ...
             ",
+            false,
         );
     }
 
@@ -3924,6 +3981,7 @@ mod tests {
                 {{_}} {{_}}: idiv r.64.x
                 ...
             ",
+            false,
         );
     }
 
@@ -3948,6 +4006,7 @@ mod tests {
                 {{_}} {{_}}: idiv r.64.x
                 ...
             ",
+            false,
         );
     }
 
@@ -3969,6 +4028,7 @@ mod tests {
                 {{_}} {{_}}: mov r.64.x, r.64.y
                 ...
             ",
+            false,
         );
     }
 
@@ -3989,6 +4049,7 @@ mod tests {
                 {{_}} {{_}}: cmovz r.64.x, r.64.y
                 ...
             ",
+            false,
         );
     }
 
@@ -4007,6 +4068,7 @@ mod tests {
                 {{_}} {{_}}: add r.32.y, 0x01
                 ...
             ",
+            false,
         );
     }
 
@@ -4024,6 +4086,7 @@ mod tests {
                 {{_}} {{_}}: cvtsi2ss fp.128.x, r.32.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -4041,6 +4104,7 @@ mod tests {
                 {{_}} {{_}}: cvtsi2sd fp.128.x, r.32.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -4059,6 +4123,7 @@ mod tests {
                 {{_}} {{_}}: cvtss2sd fp.128.x, fp.128.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -4076,6 +4141,7 @@ mod tests {
                 {{_}} {{_}}: cvttss2si r.64.x, fp.128.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -4093,6 +4159,7 @@ mod tests {
                 {{_}} {{_}}: cvttsd2si r.64.x, fp.128.x
                 ...
                 ",
+            false,
         );
     }
 
@@ -4111,6 +4178,7 @@ mod tests {
                 {{_}} {{_}}: divss fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4129,6 +4197,7 @@ mod tests {
                 {{_}} {{_}}: divsd fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4147,6 +4216,7 @@ mod tests {
                 {{_}} {{_}}: addss fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4165,6 +4235,7 @@ mod tests {
                 {{_}} {{_}}: addsd fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4183,6 +4254,7 @@ mod tests {
                 {{_}} {{_}}: subss fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4201,6 +4273,7 @@ mod tests {
                 {{_}} {{_}}: subsd fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4219,6 +4292,7 @@ mod tests {
                 {{_}} {{_}}: mulss fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4237,6 +4311,7 @@ mod tests {
                 {{_}} {{_}}: mulsd fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4264,6 +4339,7 @@ mod tests {
                 {{_}} {{_}}: and r.8.x, r.8.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4291,6 +4367,7 @@ mod tests {
                 {{_}} {{_}}: and r.8.x, r.8.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4314,6 +4391,7 @@ mod tests {
                 {{_}} {{_}}: addss fp.128.x, fp.128.y
                 ...
                 ",
+            false,
         );
     }
 
@@ -4333,6 +4411,7 @@ mod tests {
                 {{_}} {{_}}: mov r.64.x, 0x400b333333333333
                 ...
                 ",
+            false,
         );
     }
 
@@ -4355,6 +4434,7 @@ mod tests {
                 {{_}} {{_}}: mov r.64.x, 0x2a
                 {{_}} {{_}}: jmp ...
             ",
+            false,
         );
     }
 
@@ -4379,6 +4459,28 @@ mod tests {
                 {{_}} {{_}}: movq fp.128.y, r.64.x
                 {{_}} {{_}}: xorpd fp.128.a, fp.128.y
             ",
+            false,
+        );
+    }
+
+    #[test]
+    fn cg_aliasing_vars() {
+        // FIXME: this test won't pass the well-formed checker, because the guard will be CSE'd to
+        // `guard true, %1, [%2, %2]`, which makes an alias the register allocator wouldn't be able
+        // to handle if the guard were to be side-traced from.
+        codegen_and_test(
+            "
+              entry:
+                %0: i8 = load_ti 0
+                %1: i1 = load_ti 1
+                %2: i8 = add %0, 1i8
+                %3: i8 = add %0, 1i8
+                guard true, %1, [%2, %3]
+            ",
+            "
+                ...
+            ",
+            true,
         );
     }
 }
