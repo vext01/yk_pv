@@ -4381,4 +4381,35 @@ mod tests {
             ",
         );
     }
+
+    #[test]
+    fn cg_aliasing_loadtis() {
+        let mut m = jit_ir::Module::new(0, 0).unwrap();
+
+        // Create two trace inputs with aliasing locations.
+        let loc = yksmp::Location::Register(13, 1, 0, [].into());
+        m.push_tiloc(loc);
+        let ti_inst = jit_ir::LoadTraceInputInst::new(0, m.int8_tyidx());
+        let op1 = m.push_and_make_operand(ti_inst.clone().into()).unwrap();
+        let op2 = m.push_and_make_operand(ti_inst.into()).unwrap();
+
+        // Then a use of those two variable simealtaneously will make a debug_assertion in the
+        // allocator fail because it assumes distinct variables can't live in the same register.
+        let add_inst = jit_ir::BinOpInst::new(op1, jit_ir::BinOp::Add, op2);
+        m.push(add_inst.into()).unwrap();
+
+        let mt = MT::new().unwrap();
+        let hl = HotLocation {
+            kind: HotLocationKind::Tracing,
+            tracecompilation_errors: 0,
+        };
+
+        Assemble::new(&m, None, None)
+            .unwrap()
+            .codegen(mt, Arc::new(Mutex::new(hl)), None)
+            .unwrap()
+            .as_any()
+            .downcast::<X64CompiledTrace>()
+            .unwrap();
+    }
 }
