@@ -12,9 +12,14 @@
 //     yk-jit-event: start-tracing
 //     3
 //     yk-jit-event: stop-tracing
-//     --- Begin jit-pre-opt ---
+//     --- Begin jit-post-opt ---
 //     ...
-//     --- End jit-pre-opt ---
+//     --- End jit-post-opt ---
+//     2
+//     yk-jit-event: enter-jit-code
+//     1
+//     yk-jit-event: deoptimise
+//     return
 //     exit
 
 // Check that basic trace compilation works.
