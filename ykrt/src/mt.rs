@@ -219,6 +219,7 @@ impl MT {
 
     /// Queue `job` to be run on a worker thread.
     fn queue_job(self: &Arc<Self>, job: Box<dyn FnOnce() + Send>) {
+        std::sync::atomic::fence(Ordering::SeqCst);
         #[cfg(feature = "yk_testing")]
         if let Ok(true) = env::var("YKD_SERIALISE_COMPILATION").map(|x| x.as_str() == "1") {
             // To ensure that we properly test that compilation can occur in another thread, we
@@ -250,7 +251,10 @@ impl MT {
                 while mt.upgrade().is_some() {
                     match lock.pop_front() {
                         Some(x) => {
-                            MutexGuard::unlocked(&mut lock, x);
+                            MutexGuard::unlocked(&mut lock, || {
+                                std::sync::atomic::fence(Ordering::SeqCst);
+                                x()
+                            });
                         }
                         None => cv.wait(&mut lock),
                     }
