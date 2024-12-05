@@ -240,6 +240,7 @@ pub(crate) extern "C" fn __yk_deopt(
                                 16 | 8 => unsafe { ptr::write::<u64>(temp as *mut u64, jitval) },
                                 4 => unsafe { ptr::write::<u32>(temp as *mut u32, jitval as u32) },
                                 2 => unsafe { ptr::write::<u16>(temp as *mut u16, jitval as u16) },
+                                1 => unsafe { ptr::write::<u8>(temp as *mut u8, jitval as u8) },
                                 _ => todo!("{}", size),
                             }
                         }
