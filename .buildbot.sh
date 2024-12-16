@@ -26,6 +26,9 @@ test_yklua() {
     cd tests
     YKD_SERIALISE_COMPILATION=1 ../src/lua -e"_U=true" all.lua
     ../src/lua -e"_U=true" all.lua
+    cd ../third_party_tests
+    YKD_SERIALISE_COMPILATION=1 ./run.sh ../src/lua
+    ./run.sh ../src/lua
     cd ../..
 }
 
