@@ -2,7 +2,7 @@ FROM debian:latest
 WORKDIR /ci
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
-  rm -f /etc/apt/apt.conf.d/docker-clean && \
+  xxxrm -f /etc/apt/apt.conf.d/docker-clean && \
   apt-get update && \
   apt-get -y install clang-17 make curl procps file git cmake python3 \
     libtinfo-dev libzip-dev mold ninja-build gdb pipx rsync && \
