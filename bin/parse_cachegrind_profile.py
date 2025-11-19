@@ -6,6 +6,16 @@ import sys
 
 TRACE_FUNC_RE = re.compile('__yk_trace_[0-9]+')
 
+def is_opt(fn):
+    return fn.startswith("__yk_opt")
+
+def is_tc(fl, fn):
+    # ^ just a heuristic
+    return fl.endswith(".rs") or "::" in fn or "rust" in fn
+
+def is_trace(fn):
+    return TRACE_FUNC_RE.match(fn) is not None
+
 def process_file(f):
     header = True
     fl = None
@@ -42,15 +52,12 @@ def process_file(f):
                 lineno, val = line.split(" ")
                 val = int(val)
                 total_events += val
-                func_events[fn] += val
-                if fl.endswith(".rs") or "::" in fn or "rust" in fn:
-                    # ^ just a heuristic
-                    # do a release-with-debug build and we can probably filter
-                    # just by filename?
+                func_events[(fl, fn)] += val
+                if is_tc(fl, fn):
                     tcompiler_events += val
-                elif fn.startswith("__yk_opt_"):
+                elif is_opt(fn):
                     opt_events += val
-                elif TRACE_FUNC_RE.match(fn):
+                elif is_trace(fn):
                     trace_events += val
 
     assert(summary_count == total_events)
@@ -59,8 +66,16 @@ def process_file(f):
             "tcompiler_events": tcompiler_events,
             "trace_events": trace_events,
             "opt_events": opt_events,
-            "func-events": func_events,
+            "func_events": func_events,
             }
+
+def c_tracing_perc(d):
+    total_events_notc = d["total_events"] - d["tcompiler_events"]
+    return d["trace_events"] / total_events_notc * 100
+
+def c_opt_perc(d):
+    total_events_notc = d["total_events"] - d["tcompiler_events"]
+    return d["opt_events"] / total_events_notc * 100
 
 def mode_summary(files):
     data = {}
@@ -68,14 +83,6 @@ def mode_summary(files):
         print(">> " + fname)
         with open(fname) as f:
             data[fname] = process_file(f)
-
-    def c_tracing_perc(d):
-        total_events_notc = d["total_events"] - d["tcompiler_events"]
-        return d["trace_events"] / total_events_notc * 100
-
-    def c_opt_perc(d):
-        total_events_notc = d["total_events"] - d["tcompiler_events"]
-        return d["opt_events"] / total_events_notc * 100
 
     sorted_data = sorted(data.items(), key=lambda item: c_tracing_perc(item[1]))
 
@@ -95,9 +102,52 @@ def mode_summary(files):
         print(f"{fname:30} {tracing_perc:6.2f}%    {opt_perc:6.2f}%" + \
                 f"      {other_perc:6.2f}%")
 
+def mode_makeup(file):
+    data = None
+    with open(file) as f:
+        data = process_file(f)
+
+    traces_perc = c_tracing_perc(data)
+    opt_perc = c_opt_perc(data)
+    other_perc = 100 - (traces_perc + opt_perc)
+    assert(99.9 <= (traces_perc + opt_perc + other_perc) <= 100.1)
+
+    makeup = {
+            "traces": (traces_perc, data["trace_events"], []),
+            "opt": (opt_perc, data["opt_events"], []),
+            "other": (other_perc, data["total_events"] - \
+                    data["tcompiler_events"] - data["trace_events"] - \
+                    data["opt_events"], []),
+            }
+
+    for (fl, fn), val in data["func_events"].items():
+        r = None
+        if is_tc(fl, fn):
+            continue
+        elif is_trace(fn):
+            r = makeup["traces"]
+        elif is_opt(fn):
+            r = makeup["opt"]
+        else:
+            r = makeup["other"]
+
+        perc = val / r[1] * 100
+        r[2].append(((fl, fn), perc))
+
+    for kind, (all_perc, all, funcs) in makeup.items():
+        print(f">> {kind} ({all_perc:6.2f}%): ")
+        funcs = sorted(funcs, key=lambda f: f[1], reverse=True)
+        sum_perc = 0
+        for (fl, fn), perc in funcs:
+            print(f"  {fn:30} {perc:6.2f}%")
+            sum_perc += perc
+        assert(99.9 <= sum_perc <= 100.1)
+
 
 if __name__ == "__main__":
     if sys.argv[1] == "summary":
         mode_summary(sys.argv[2:])
+    elif sys.argv[1] == "makeup":
+        mode_makeup(sys.argv[2])
     else:
         print("bad usage")
