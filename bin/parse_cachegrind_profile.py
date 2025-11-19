@@ -6,7 +6,7 @@ import sys
 
 TRACE_FUNC_RE = re.compile('__yk_trace_[0-9]+')
 
-def process_file(fl):
+def process_file(f):
     header = True
     fl = None
     fn = None
@@ -62,9 +62,9 @@ def process_file(fl):
             "func-events": func_events,
             }
 
-if __name__ == "__main__":
+def mode_summary(files):
     data = {}
-    for fname in sys.argv[1:]:
+    for fname in files:
         print(">> " + fname)
         with open(fname) as f:
             data[fname] = process_file(f)
@@ -94,3 +94,10 @@ if __name__ == "__main__":
         assert(99.9 <= (tracing_perc + opt_perc + other_perc) <= 100.1)
         print(f"{fname:30} {tracing_perc:6.2f}%    {opt_perc:6.2f}%" + \
                 f"      {other_perc:6.2f}%")
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "summary":
+        mode_summary(sys.argv[2:])
+    else:
+        print("bad usage")
