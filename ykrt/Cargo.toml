@@ -34,6 +34,11 @@ vob = "3.0.6"
 ykaddr = { path = "../ykaddr" }
 yksmp = { path = "../yksmp" }
 zydis = "4.1.0"
+# Note: patched crabgrind to support the JIT symbol client request.
+# FIXME: We could probably do away with this dep if we hacked yk to build its
+# own little C stub to call the valgrind client request. Depends if we want to
+# keep this branch or not.
+crabgrind = { git = "https://github.com/vext01/crabgrind", branch = "jit-symbols" }
 
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dependencies]
 hwtracer = { path = "../hwtracer" }

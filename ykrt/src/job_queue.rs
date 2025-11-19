@@ -6,7 +6,6 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 #[cfg(feature = "yk_testing")]
 use std::env;
 use std::{
-    cmp,
     collections::VecDeque,
     sync::{
         Arc,
@@ -62,7 +61,7 @@ impl JobQueue {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             queue: Arc::new((Condvar::new(), Mutex::new(VecDeque::new()))),
-            max_worker_threads: AtomicUsize::new(cmp::max(1, num_cpus::get() - 1)),
+            max_worker_threads: AtomicUsize::new(1),
             worker_threads: Mutex::new(Vec::new()),
             idle_worker_threads: AtomicUsize::new(0),
         })

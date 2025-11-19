@@ -79,6 +79,13 @@ thread_local! {
     static THREAD_IS_TRACING: AtomicIsTracing = const { AtomicIsTracing::new(IsTracing::None) };
 }
 
+fn register_code_with_valgrind(ctr: Arc<dyn CompiledTrace>) {
+    use crabgrind;
+    use std::ffi::CString;
+    let name = CString::new(format!("__yk_trace_{}", ctr.ctrid())).unwrap();
+    crabgrind::valgrind::vg_jit_v0_register_map(ctr.entry(), ctr.code().len(), name.as_ptr());
+}
+
 /// A meta-tracer. This is always passed around stored in an [Arc].
 ///
 /// When you are finished with this meta-tracer, it is best to explicitly call [MT::shutdown] to
@@ -301,6 +308,7 @@ impl MT {
                 endframe,
             ) {
                 Ok(ctr) => {
+                    register_code_with_valgrind(ctr.clone());
                     assert_eq!(ctr.ctrid(), trid);
                     mt.compiled_traces
                         .lock()
@@ -413,6 +421,7 @@ impl MT {
                 endframe,
             ) {
                 Ok(ctr) => {
+                    register_code_with_valgrind(ctr.clone());
                     assert_eq!(ctr.ctrid(), trid);
                     mt.compiled_traces
                         .lock()
