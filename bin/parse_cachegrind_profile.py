@@ -69,28 +69,28 @@ if __name__ == "__main__":
         with open(fname) as f:
             data[fname] = process_file(f)
 
-    def c_tcomp_perc(d):
-        return d["tcompiler_events"] / d["total_events"] * 100
-
     def c_tracing_perc(d):
-        return d["trace_events"] / d["total_events"] * 100
+        total_events_notc = d["total_events"] - d["tcompiler_events"]
+        return d["trace_events"] / total_events_notc * 100
 
     def c_opt_perc(d):
-        return d["opt_events"] / d["total_events"] * 100
+        total_events_notc = d["total_events"] - d["tcompiler_events"]
+        return d["opt_events"] / total_events_notc * 100
 
     sorted_data = sorted(data.items(), key=lambda item: c_tracing_perc(item[1]))
 
     hdr_file = "file"
     hdr_trace = "%trace"
     hdr_opt = "%__yk_opt_*"
-    hdr_tcomp = "%tcomp"
     hdr_other = "%other"
-    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}   {hdr_tcomp:6}    {hdr_other:6}")
+    print("note: excludes events in functions that look like the trace compiler")
+    print("\n")
+    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}  {hdr_other:6}")
     print("-" * 73)
     for fname, data in sorted_data:
         tracing_perc = c_tracing_perc(data)
         opt_perc = c_opt_perc(data)
-        tcomp_perc = c_tcomp_perc(data)
-        other_perc = 100 - (tracing_perc + opt_perc + tcomp_perc)
+        other_perc = 100 - (tracing_perc + opt_perc)
+        assert(99.9 <= (tracing_perc + opt_perc + other_perc) <= 100.1)
         print(f"{fname:30} {tracing_perc:6.2f}%    {opt_perc:6.2f}%" + \
-                f"      {tcomp_perc:6.2f}%    {other_perc:6.2f}%")
+                f"      {other_perc:6.2f}%")
