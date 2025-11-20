@@ -7,6 +7,34 @@ import sys
 
 TRACE_FUNC_RE = re.compile('__yk_trace_[0-9]+')
 
+# rough hard-coded yklua/lua ratios, as of the time of writing.
+RATIOS = {
+        "cachegrind.hashids.out":          0.8,
+        "cachegrind.revcomp.out":          1.0,
+        "cachegrind.storage.out":          1.0,
+        "cachegrind.havlak.out":           1.0,
+        "cachegrind.knucleotide.out":      0.8,
+        "cachegrind.cd.out":               1.0,
+        "cachegrind.deltablue.out":        1.1,
+        "cachegrind.json.out":             0.9,
+        "cachegrind.binarytrees.out":      1.0,
+        "cachegrind.lulpeg.out":           1.0,
+        "cachegrind.nbody.out":            0.4,
+        "cachegrind.richards.out":         0.8,
+        "cachegrind.bounce.out":           0.65,
+        "cachegrind.towers.out":           0.75,
+        "cachegrind.list.out":             0.9,
+        "cachegrind.sieve.out":            0.6,
+        "cachegrind.fasta.out":            1.0,
+        "cachegrind.permute.out":          0.65,
+        "cachegrind.queens.out":           0.75,
+        "cachegrind.heightmap.out":        0.5,
+        "cachegrind.mandelbrot.out":       0.23,
+        "cachegrind.fannkuchredux.out":    0.65,
+        "cachegrind.spectralnorm.out":     0.65,
+        "cachegrind.bigloop.out":          0.32,
+}
+
 def is_opt(yk_outlined, fn):
     #return fn.startswith("__yk_opt")
     return fn in yk_outlined and (not fn == "luaV_execute")
@@ -18,7 +46,7 @@ def is_tc(fl, fn):
 def is_trace(fn):
     return TRACE_FUNC_RE.match(fn) is not None
 
-def process_file(yk_outlined, f):
+def process_file(yk_outlined, f, filename):
     header = True
     fl = None
     fn = None
@@ -69,6 +97,7 @@ def process_file(yk_outlined, f):
             "trace_events": trace_events,
             "opt_events": opt_events,
             "func_events": func_events,
+            "perf_ratio": RATIOS[filename],
             }
 
 def c_tracing_perc(d):
@@ -84,7 +113,7 @@ def mode_summary(yk_outlined, files):
     for fname in files:
         print(">> " + fname)
         with open(fname) as f:
-            data[fname] = process_file(yk_outlined, f)
+            data[fname] = process_file(yk_outlined, f, fname)
 
     sorted_data = sorted(data.items(), key=lambda item: c_tracing_perc(item[1]))
 
@@ -92,22 +121,25 @@ def mode_summary(yk_outlined, files):
     hdr_trace = "%trace"
     hdr_opt = "%opt"
     hdr_other = "%other"
+    hdr_ratio = "perf_ratio"
     print("note: excludes events in functions that look like the trace compiler")
     print("\n")
-    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}       {hdr_other:6}")
-    print("-" * 73)
+    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}       " + \
+            f"{hdr_other:6}      {hdr_ratio:6}")
+    print("-" * 80)
     for fname, data in sorted_data:
         tracing_perc = c_tracing_perc(data)
         opt_perc = c_opt_perc(data)
         other_perc = 100 - (tracing_perc + opt_perc)
+        ratio = data["perf_ratio"]
         assert(99.9 <= (tracing_perc + opt_perc + other_perc) <= 100.1)
         print(f"{fname:30} {tracing_perc:6.2f}%    {opt_perc:6.2f}%" + \
-                f"      {other_perc:6.2f}%")
+                f"      {other_perc:6.2f}%    {ratio:6.2f}")
 
 def mode_makeup(yk_outlined, file):
     data = None
     with open(file) as f:
-        data = process_file(yk_outlined, f)
+        data = process_file(yk_outlined, f, file)
 
     traces_perc = c_tracing_perc(data)
     opt_perc = c_opt_perc(data)
