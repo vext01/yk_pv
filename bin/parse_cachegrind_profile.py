@@ -7,8 +7,9 @@ import sys
 
 TRACE_FUNC_RE = re.compile('__yk_trace_[0-9]+')
 
-def is_opt(fn):
-    return fn.startswith("__yk_opt")
+def is_opt(yk_outlined, fn):
+    #return fn.startswith("__yk_opt")
+    return fn in yk_outlined and (not fn == "luaV_execute")
 
 def is_tc(fl, fn):
     # ^ just a heuristic
@@ -17,7 +18,7 @@ def is_tc(fl, fn):
 def is_trace(fn):
     return TRACE_FUNC_RE.match(fn) is not None
 
-def process_file(f):
+def process_file(yk_outlined, f):
     header = True
     fl = None
     fn = None
@@ -56,7 +57,7 @@ def process_file(f):
                 func_events[(fl, fn)] += val
                 if is_tc(fl, fn):
                     tcompiler_events += val
-                elif is_opt(fn):
+                elif is_opt(yk_outlined, fn):
                     opt_events += val
                 elif is_trace(fn):
                     trace_events += val
@@ -78,22 +79,22 @@ def c_opt_perc(d):
     total_events_notc = d["total_events"] - d["tcompiler_events"]
     return d["opt_events"] / total_events_notc * 100
 
-def mode_summary(files):
+def mode_summary(yk_outlined, files):
     data = {}
     for fname in files:
         print(">> " + fname)
         with open(fname) as f:
-            data[fname] = process_file(f)
+            data[fname] = process_file(yk_outlined, f)
 
     sorted_data = sorted(data.items(), key=lambda item: c_tracing_perc(item[1]))
 
     hdr_file = "file"
     hdr_trace = "%trace"
-    hdr_opt = "%__yk_opt_*"
+    hdr_opt = "%opt"
     hdr_other = "%other"
     print("note: excludes events in functions that look like the trace compiler")
     print("\n")
-    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}  {hdr_other:6}")
+    print(f"{hdr_file:30}  {hdr_trace:6}     {hdr_opt:6}       {hdr_other:6}")
     print("-" * 73)
     for fname, data in sorted_data:
         tracing_perc = c_tracing_perc(data)
@@ -103,10 +104,10 @@ def mode_summary(files):
         print(f"{fname:30} {tracing_perc:6.2f}%    {opt_perc:6.2f}%" + \
                 f"      {other_perc:6.2f}%")
 
-def mode_makeup(file):
+def mode_makeup(yk_outlined, file):
     data = None
     with open(file) as f:
-        data = process_file(f)
+        data = process_file(yk_outlined, f)
 
     traces_perc = c_tracing_perc(data)
     opt_perc = c_opt_perc(data)
@@ -127,7 +128,7 @@ def mode_makeup(file):
             continue
         elif is_trace(fn):
             r = makeup["traces"]
-        elif is_opt(fn):
+        elif is_opt(yk_outlined, fn):
             r = makeup["opt"]
         else:
             r = makeup["other"]
@@ -146,10 +147,18 @@ def mode_makeup(file):
         assert(99.9 <= sum_perc <= 100.1)
 
 
+def read_yk_outlined():
+    yk_outlined = set()
+    with open("OUTLINEMAP") as f:
+        for line in f:
+            yk_outlined.add(line.strip())
+    return yk_outlined
+
 if __name__ == "__main__":
+    yk_outlined = read_yk_outlined()
     if sys.argv[1] == "summary":
-        mode_summary(sys.argv[2:])
+        mode_summary(yk_outlined, sys.argv[2:])
     elif sys.argv[1] == "makeup":
-        mode_makeup(sys.argv[2])
+        mode_makeup(yk_outlined, sys.argv[2])
     else:
         print("bad usage")
