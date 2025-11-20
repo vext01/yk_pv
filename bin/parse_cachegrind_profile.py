@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import defaultdict
+import os
 import re
 import sys
 
@@ -139,7 +140,8 @@ def mode_makeup(file):
         funcs = sorted(funcs, key=lambda f: f[1], reverse=True)
         sum_perc = 0
         for (fl, fn), perc in funcs:
-            print(f"  {fn:30} {perc:6.2f}%")
+            fl_b = os.path.basename(fl)
+            print(f"  {fl_b:30} {fn:30} {perc:6.2f}%")
             sum_perc += perc
         assert(99.9 <= sum_perc <= 100.1)
 
