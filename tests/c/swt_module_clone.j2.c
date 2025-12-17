@@ -7,10 +7,10 @@
 //     4
 //     --- Begin aot ---
 //     ...
-//     #[yk_outline]
+//     #[yk_outline, yk_no_callback]
 //     func add(%arg0: i32, %arg1: i32) -> i32;
 //     ...
-//     #[yk_outline]
+//     #[yk_outline, yk_no_callback]
 //     func dec(%arg0: i32) -> i32;
 //     ...
 //     #[yk_outline]

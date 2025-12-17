@@ -1078,7 +1078,15 @@ impl<Reg: RegT + 'static> AotToHir<Reg> {
             } else {
                 self.push_inst_and_link_local(iid, inst)?;
             }
-            self.outline_until(bid)?;
+            // If the call can never result in executing traceable code, then:
+            //  - ykllvm won't have split the block at this call.
+            //  - there are no trace actions to "skip over" for this call.
+            //  - there will not be a trace action to mark where we could stop outlining.
+            //
+            // Since there are no trace actions to skip, we can simply not turn on outlining.
+            if !func.is_no_callback() {
+                self.outline_until(bid)?;
+            }
             Ok(false)
         }
     }

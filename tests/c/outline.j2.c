@@ -9,7 +9,7 @@
 //     yk-tracing: stop-tracing
 //     --- Begin aot ---
 //     ...
-//     #[yk_outline]
+//     #[yk_outline, yk_no_callback]
 //     func foo(%arg0: i32) -> i32;
 //     ...
 //     --- End aot ---
