@@ -73,9 +73,9 @@ use crate::{
             codebuf::ExeCodeBuf,
             compiled_trace::{DeoptFrame, J2CompiledGuard, J2CompiledTrace, J2CompiledTraceKind},
             hir::*,
-            regalloc::{RegAlloc, RegFill, RegT, SnapshotIdx, VarLocs},
+            regalloc::{RegAlloc, RegFill, RegT, SnapshotIdx, VarLoc, VarLocs},
         },
-        jitc_yk::aot_ir::{self},
+        jitc_yk::{AOT_MOD, aot_ir, arbbitint::ArbBitInt},
     },
     location::HotLocation,
     log::{IRPhase, log_ir, should_log_ir},
@@ -345,7 +345,63 @@ impl<'a, AB: HirToAsmBackend> HirToAsm<'a, AB> {
                                 .zip(pc_safepoint.lives.iter().zip(smap.live_vals.iter()))
                                 .map(|(iidx, (aot_op, smap_loc))| {
                                     let fromvlocs = ra.varlocs_for_deopt(*iidx);
-                                    let mut tovlocs = AB::smp_to_vloc(smap_loc);
+                                    let mut tovlocs = if let aot_ir::Operand::Const(cidx) = aot_op
+                                        && let &[yksmp::Location::Constant(_)] = smap_loc.as_slice()
+                                    {
+                                        let am = &*AOT_MOD;
+                                        match am.const_(*cidx) {
+                                            aot_ir::Const::Val(x) => {
+                                                let bytes = x.bytes();
+                                                match am.type_(x.tyidx()) {
+                                                    aot_ir::Ty::Void => todo!(),
+                                                    aot_ir::Ty::Integer(x) => {
+                                                        // FIXME: It would be better if the AOT IR had converted these integers in advance
+                                                        // rather than doing this dance here.
+                                                        let v = match x.bitw() {
+                                                            1 | 8 => {
+                                                                debug_assert_eq!(bytes.len(), 1);
+                                                                u64::from(bytes[0])
+                                                            }
+                                                            16 => {
+                                                                debug_assert_eq!(bytes.len(), 2);
+                                                                u64::from(u16::from_ne_bytes([
+                                                                    bytes[0], bytes[1],
+                                                                ]))
+                                                            }
+                                                            32 => {
+                                                                debug_assert_eq!(bytes.len(), 4);
+                                                                u64::from(u32::from_ne_bytes([
+                                                                    bytes[0], bytes[1], bytes[2],
+                                                                    bytes[3],
+                                                                ]))
+                                                            }
+                                                            64 => {
+                                                                debug_assert_eq!(bytes.len(), 8);
+                                                                u64::from_ne_bytes([
+                                                                    bytes[0], bytes[1], bytes[2],
+                                                                    bytes[3], bytes[4], bytes[5],
+                                                                    bytes[6], bytes[7],
+                                                                ])
+                                                            }
+                                                            _ => todo!("{}", x.bitw()),
+                                                        };
+                                                        let x = ConstKind::Int(
+                                                            ArbBitInt::from_u64(x.bitw(), v),
+                                                        );
+                                                        VarLocs::new(smallvec![VarLoc::Const(x)])
+                                                    }
+                                                    aot_ir::Ty::Ptr => todo!(),
+                                                    aot_ir::Ty::Func(_) => todo!(),
+                                                    aot_ir::Ty::Struct(_) => todo!(),
+                                                    aot_ir::Ty::Float(_) => todo!(),
+                                                    aot_ir::Ty::Unimplemented(_) => todo!(),
+                                                }
+                                            }
+                                            aot_ir::Const::Unimplemented { .. } => todo!(),
+                                        }
+                                    } else {
+                                        AB::smp_to_vloc(smap_loc)
+                                    };
                                     if fromvlocs == tovlocs {
                                         // Optimise away situations where we would just move a
                                         // value from VLoc X to VLoc X.
