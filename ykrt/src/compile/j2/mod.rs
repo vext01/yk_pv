@@ -25,7 +25,7 @@ mod x64;
 
 use crate::{
     compile::{
-        CompilationError, CompiledTrace, Compiler, GuardId, j2::codebuf::CodeBufInProgress,
+        CompilationError, CompiledTrace, Compiler, GuardId, gdb, j2::codebuf::CodeBufInProgress,
         jitc_yk::AOT_MOD,
     },
     location::HotLocation,
@@ -258,15 +258,38 @@ impl Compiler for J2 {
         #[cfg(target_arch = "x86_64")]
         let minlen = x64::x64hir_to_asm::X64HirToAsm::codebuf_minlen(&hm);
         let buf = self.mmap_codebufinprogress(minlen);
+        #[cfg(any(debug_assertions, test))]
+        let len = buf.len();
         #[cfg(target_arch = "x86_64")]
         let be = x64::x64hir_to_asm::X64HirToAsm::new(&hm, buf);
 
         let ct = hir_to_asm::HirToAsm::new(&hm, hl, be).build(mt.clone())?;
 
-        // Register JITted code (if required).
+        // Register JITted code with profiler (if required).
         mt.trace_profiler().register_ctr(&ct).map_err(|e| {
             CompilationError::General(format!("failed to register jitted code with profiler: {e}"))
         })?;
+
+        // Register JITted code with debugger (if required).
+        use indexmap::IndexMap;
+        #[cfg(any(debug_assertions, test))]
+        {
+            let gdb_ctx = gdb::register_jitted_code(
+                ct.ctrid(),
+                ct.entry() as *const u8,
+                // XXX is this the correct length? Could it have grown since earlier?
+                len,
+                // XXX: this map needs to be populated if we want `layout src` to work in gdb.
+                // It's a mapping from byte offset to "comment" strings to show. A typical comment
+                // string is the stringified JIT IR instruction.
+                &IndexMap::default(),
+            )?;
+            // XXX: this needs to be stored somewhere instead of leaking, probably in the compiled
+            // trace. If gdb_ctx drops while we could still be debugging the trace then it won't
+            // work correctly.
+            let xxx = Box::new(gdb_ctx);
+            Box::leak(xxx);
+        }
 
         Ok(ct)
     }

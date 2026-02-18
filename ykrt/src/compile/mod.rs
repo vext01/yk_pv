@@ -13,6 +13,7 @@ use std::{
 };
 use thiserror::Error;
 
+pub(crate) mod gdb;
 pub(crate) mod guard;
 pub(crate) use guard::{Guard, GuardId};
 pub mod j2;
